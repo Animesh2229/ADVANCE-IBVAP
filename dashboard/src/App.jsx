@@ -3,6 +3,9 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Watchlist from "./pages/Watchlist";
+import Users from "./pages/Users";
+import Reports from "./pages/Reports";
+import GlobalTracks from "./pages/GlobalTracks";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -16,16 +19,11 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/watchlist" element={
-            <ProtectedRoute>
-              <Watchlist />
-            </ProtectedRoute>
-          } />
+          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/watchlist" element={<ProtectedRoute><Watchlist /></ProtectedRoute>} />
+          <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+          <Route path="/global-tracks" element={<ProtectedRoute><GlobalTracks /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

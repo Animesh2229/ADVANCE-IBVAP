@@ -6,7 +6,9 @@ AI-Based Intelligent Video Analytics Platform for Border Surveillance using exis
 
 **Problem Statement ID:** 26187  
 **Organization:** Ministry of Home Affairs  
-**Department:** Sashastra Seema Bal (SSB)
+**Department:** Sashastra Seema Bal (SSB)  
+**Category:** Software  
+**Theme:** Blockchain & Cybersecurity
 
 ---
 
@@ -14,14 +16,15 @@ AI-Based Intelligent Video Analytics Platform for Border Surveillance using exis
 
 - Human & Vehicle Detection + Tracking
 - Face Detection
-- Automatic Number Plate Recognition (India + Nepal + Bhutan)
+- ANPR (India + Nepal + Bhutan support)
 - Virtual Fence Intrusion Detection
 - Night / Low-light Enhancement
 - Real-time Alerts
 - Role-based Access (Admin, Commander, Operator, Patroller)
 - Vehicle Watchlist
-- Multi-camera support ready
+- Multi-camera ready
 - Low-Bandwidth mode for remote BOPs
+- HQ Dashboard + Field App structure
 
 ---
 
@@ -29,54 +32,48 @@ AI-Based Intelligent Video Analytics Platform for Border Surveillance using exis
 
 ```
 ADVANCE-IBVAP/
-├── edge/                 # Edge AI Pipeline
-├── central/              # FastAPI Backend
-├── dashboard/            # React HQ Dashboard
-├── configs/              # Configuration files
-├── scripts/              # Start & setup scripts
+├── edge/                  # Edge AI Pipeline
+├── central/               # FastAPI Backend
+├── dashboard/             # React HQ Dashboard
+├── field-app/             # Mobile App starter
+├── configs/               # Configuration
+├── scripts/               # Setup & start scripts
+├── docs/                  # Architecture & Deployment docs
 ├── docker-compose.yml
 └── README.md
 ```
 
 ---
 
-## Quick Start (Laptop)
+## Quick Start
 
-### 1. Clone the repository
+### 1. Clone
 ```bash
 git clone https://github.com/Animesh2229/ADVANCE-IBVAP.git
 cd ADVANCE-IBVAP
 ```
 
-### 2. Start Database + Central
+### 2. Central + Database
 ```bash
 docker-compose up -d
-
 cd central
 python -m venv venv
-
-# Linux / Mac
-source venv/bin/activate
-
-# Windows
-# venv\Scripts\activate
-
+source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python create_admin.py
-
 uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3. Start Dashboard
+### 3. Dashboard
 ```bash
 cd dashboard
 npm install
 npm run dev
 ```
-Open: http://localhost:5173  
+Open http://localhost:5173  
 Login: **admin** / **Admin@123**
 
-### 4. Start Edge (Webcam)
+### 4. Edge
 ```bash
 cd edge
 python -m venv venv
@@ -87,28 +84,20 @@ python main_edge.py
 
 ---
 
-## Default Credentials
+## Default Login
 - Username: `admin`
 - Password: `Admin@123`
 
 ---
 
 ## Tech Stack
-
-**Edge:** Python, YOLOv11, OpenCV, PaddleOCR, Cryptography  
-**Central:** FastAPI, PostgreSQL, SQLAlchemy, JWT  
-**Dashboard:** React, Vite, Tailwind CSS  
-**Infra:** Docker, Docker Compose
+- **Edge:** Python, YOLOv11, OpenCV, PaddleOCR
+- **Backend:** FastAPI, PostgreSQL, JWT
+- **Frontend:** React, Vite, Tailwind CSS
+- **Infra:** Docker
 
 ---
 
 ## Notes
-
-- First run will download YOLO model automatically.
-- For real camera, edit `configs/edge_config.yaml` and set RTSP URL.
-- This is an advanced working prototype suitable for demo and further development.
-
----
-
-## License
-For educational and authorized government use only.
+This is an advanced working prototype developed for Smart India Hackathon / SSB problem statement.  
+Suitable for demonstration and further production hardening.
