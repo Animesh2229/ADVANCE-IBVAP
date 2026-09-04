@@ -3,19 +3,35 @@ import numpy as np
 import re
 
 class ANPREngine:
+    """
+    Strengthened ANPR with multi-country support (India, Nepal, Bhutan).
+    Uses PaddleOCR when available.
+    """
     def __init__(self):
         self.ocr = None
         try:
             from paddleocr import PaddleOCR
             self.ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
-            print("[ANPR] PaddleOCR loaded")
+            print("[ANPR] PaddleOCR loaded successfully")
         except Exception as e:
-            print(f"[ANPR] PaddleOCR not available ({e}). Running in dummy mode.")
+            print(f"[ANPR] PaddleOCR not available ({e}). ANPR disabled.")
 
         self.patterns = {
-            "IND": [r'^[A-Z]{2}[0-9]{1,2}[A-Z]{1,2}[0-9]{4}$', r'^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{1,4}$'],
-            "NPL": [r'^[0-9]{1,2}[A-Z]{1,3}[0-9]{1,4}$', r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{0,2}$'],
-            "BTN": [r'^[A-Z]{1,3}[0-9]{1,4}$', r'^[0-9]{1,2}[A-Z]{1,3}[0-9]{1,3}$']
+            "IND": [
+                r'^[A-Z]{2}[0-9]{1,2}[A-Z]{1,2}[0-9]{4}$',
+                r'^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{1,4}$',
+                r'^[0-9]{2}BH[0-9]{4}[A-Z]{1,2}$',
+            ],
+            "NPL": [
+                r'^[0-9]{1,2}[A-Z]{1,3}[0-9]{1,4}$',
+                r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{0,2}$',
+                r'^[0-9]{1,2}-[0-9]{1,2}-[A-Z]{1,3}-[0-9]{1,4}$',
+            ],
+            "BTN": [
+                r'^[A-Z]{1,3}[0-9]{1,4}$',
+                r'^[0-9]{1,2}[A-Z]{1,3}[0-9]{1,3}$',
+                r'^(BP|BT|TH|TR|PG|SG)[0-9A-Z]{1,6}$',
+            ]
         }
 
     def _clean_text(self, text: str) -> str:
@@ -29,27 +45,30 @@ class ANPREngine:
         return "UNKNOWN"
 
     def recognize(self, frame: np.ndarray, vehicle_bbox: list):
+        if self.ocr is None:
+            return None
+
         x1, y1, x2, y2 = map(int, vehicle_bbox)
         x1, y1 = max(0, x1), max(0, y1)
         roi = frame[y1:y2, x1:x2]
-        if roi.size == 0 or roi.shape[0] < 25 or roi.shape[1] < 60:
-            return None
 
-        if self.ocr is None:
+        if roi.size == 0 or roi.shape[0] < 25 or roi.shape[1] < 60:
             return None
 
         try:
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            gray = cv2.bilateralFilter(gray, 11, 17, 17)
             gray = cv2.equalizeHist(gray)
+
             result = self.ocr.ocr(gray, cls=True)
             if not result or not result[0]:
                 return None
 
-            best_text, best_conf = "", 0
+            best_text, best_conf = "", 0.0
             for line in result[0]:
                 text, conf = line[1]
                 cleaned = self._clean_text(text)
-                if len(cleaned) >= 6 and conf > best_conf:
+                if 6 <= len(cleaned) <= 12 and conf > best_conf:
                     best_text = cleaned
                     best_conf = conf
 
@@ -60,7 +79,9 @@ class ANPREngine:
                 "plate": best_text,
                 "confidence": round(float(best_conf), 3),
                 "country": self._detect_country(best_text),
-                "bbox": vehicle_bbox
+                "bbox": vehicle_bbox,
+                "raw_text": best_text
             }
-        except Exception:
+        except Exception as e:
+            print(f"[ANPR] Error: {e}")
             return None
