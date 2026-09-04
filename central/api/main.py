@@ -13,6 +13,12 @@ import os
 
 from db.models import Base, User, Alert, VehicleWatchlist
 
+# Try importing fusion engine
+try:
+    from services.fusion import fusion_engine
+except ImportError:
+    fusion_engine = None
+
 SECRET_KEY = os.getenv("SECRET_KEY", "ibvap-super-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480
@@ -152,6 +158,20 @@ async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_
     )
     db.add(new_alert)
     await db.commit()
+
+    # Optional: Update fusion engine if available
+    if fusion_engine is not None:
+        try:
+            fusion_engine.update(
+                camera_id=alert_data.get("camera_id", "unknown"),
+                local_track_id=alert_data.get("track_id", 0),
+                label=alert_data.get("subtype") or alert_data.get("alert_type") or "unknown",
+                embedding=alert_data.get("face_embedding"),
+                plate=alert_data.get("plate")
+            )
+        except Exception:
+            pass
+
     return {"status": "accepted"}
 
 @app.post("/api/v1/alerts/{alert_id}/action")
@@ -191,9 +211,15 @@ async def add_watchlist(data: dict, current_user: User = Depends(require_roles([
     await db.commit()
     return {"msg": "Added to watchlist", "plate": plate}
 
+@app.get("/api/v1/fusion/active")
+async def get_active_global_tracks(current_user: User = Depends(get_current_user)):
+    if fusion_engine is None:
+        return {}
+    return fusion_engine.get_active_tracks()
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "IBVAP Central"}
+    return {"status": "ok", "service": "IBVAP Central", "fusion": fusion_engine is not None}
 
 @app.get("/")
 async def root():
