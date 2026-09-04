@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ibvap
+      POSTGRES_PASSWORD: ibvap
+      POSTGRES_DB: ibvap
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  central:
+    build: ./central
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ibvap:ibvap@db:5432/ibvap
+      SECRET_KEY: ibvap-change-this-in-production-very-secret-key
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  pgdata:

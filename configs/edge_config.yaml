@@ -1,0 +1,28 @@
+mode: "low_bandwidth"          # "full" or "low_bandwidth"
+
+camera:
+  source: 0                    # 0 for webcam, or RTSP URL
+  camera_id: "BOP-001-CAM-01"
+  width: 1280
+  height: 720
+
+ai:
+  detector_model: "yolo11n.pt"
+  conf_threshold: 0.55
+  face_enabled: true
+  anpr_enabled: true
+  night_enhancement: true
+
+virtual_fence:
+  enabled: true
+  points: [[200, 120], [900, 120], [900, 600], [200, 600]]
+
+central:
+  url: "http://localhost:8000/api/v1/alerts/secure"
+  timeout: 5
+
+low_bandwidth:
+  send_thumbnail_on_high: true
+  max_embedding_dim: 128
+  queue_size: 200
+  heartbeat_interval: 45
