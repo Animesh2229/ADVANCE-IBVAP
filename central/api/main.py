@@ -25,7 +25,6 @@ except ImportError:
 # ===================== CONFIG FROM ENV =====================
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY or len(SECRET_KEY) < 32:
-    # Fallback only for development - production must set env
     SECRET_KEY = secrets.token_urlsafe(48)
     print("[WARNING] SECRET_KEY not set or too short. Using temporary key. Set SECRET_KEY in environment for production!")
 
@@ -53,12 +52,11 @@ app.add_middleware(
 )
 
 # ===================== Simple In-Memory Rate Limiter =====================
-login_attempts = defaultdict(list)  # ip -> list of timestamps
+login_attempts = defaultdict(list)
 
 def check_rate_limit(ip: str, max_attempts: int = 5, window_window: int = 60):
     now = time.time()
     attempts = login_attempts[ip]
-    # Clean old attempts
     login_attempts[ip] = [t for t in attempts if now - t < window]
     if len(login_attempts[ip]) >= max_attempts:
         return False
@@ -80,7 +78,6 @@ async def add_security_headers(request: Request, call_next):
 # ===================== Global Exception Handler =====================
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # Never expose internal details to client
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error", "correlation_id": secrets.token_hex(8)}
@@ -192,7 +189,6 @@ async def get_me(current_user: User = Depends(get_current_user)):
 async def list_users(current_user: User = Depends(require_roles(["admin"])), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User))
     users = result.scalars().all()
-    # Do not return password hashes
     return [
         {
             "id": u.id,
@@ -227,7 +223,7 @@ async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_
 
     if fusion_engine is not None:
         try:
-            fusion pur_engine.update(
+            fusion_engine.update(
                 camera_id=alert_data.get("camera_id", "unknown"),
                 local_track_id=alert_data.get("track_id", 0),
                 label=alert_data.get("subtype") or alert_data.get("alert_type") or "unknown",

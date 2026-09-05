@@ -6,42 +6,7 @@ AI-Based Intelligent Video Analytics Platform for Border Surveillance using exis
 
 **Problem Statement ID:** 26187  
 **Organization:** Ministry of Home Affairs  
-**Department:** Sashastra Seema Bal (SSB)  
-**Category:** Software  
-**Theme:** Blockchain & Cybersecurity
-
----
-
-## Features
-
-- Human & Vehicle Detection + Tracking
-- Face Detection
-- ANPR (India + Nepal + Bhutan support)
-- Virtual Fence Intrusion Detection
-- Night / Low-light Enhancement
-- Real-time Alerts
-- Role-based Access (Admin, Commander, Operator, Patroller)
-- Vehicle Watchlist
-- Multi-camera ready
-- Low-Bandwidth mode for remote BOPs
-- HQ Dashboard + Field App structure
-
----
-
-## Project Structure
-
-```
-ADVANCE-IBVAP/
-├── edge/                  # Edge AI Pipeline
-├── central/               # FastAPI Backend
-├── dashboard/             # React HQ Dashboard
-├── field-app/             # Mobile App starter
-├── configs/               # Configuration
-├── scripts/               # Setup & start scripts
-├── docs/                  # Architecture & Deployment docs
-├── docker-compose.yml
-└── README.md
-```
+**Department:** Sashastra Seema Bal (SSB)
 
 ---
 
@@ -53,7 +18,13 @@ git clone https://github.com/Animesh2229/ADVANCE-IBVAP.git
 cd ADVANCE-IBVAP
 ```
 
-### 2. Central + Database
+### 2. Environment Setup
+```bash
+cp .env.example .env
+# Edit .env and set strong SECRET_KEY and passwords
+```
+
+### 3. Start Database + Central
 ```bash
 docker-compose up -d
 cd central
@@ -64,16 +35,16 @@ python create_admin.py
 uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3. Dashboard
+### 4. Dashboard
 ```bash
 cd dashboard
 npm install
 npm run dev
 ```
-Open http://localhost:5173  
-Login: **admin** / **Admin@123**
+Open: http://localhost:5173  
+Default Login: `admin` / `Admin@123` (change immediately)
 
-### 4. Edge
+### 5. Edge
 ```bash
 cd edge
 python -m venv venv
@@ -84,20 +55,28 @@ python main_edge.py
 
 ---
 
-## Default Login
-- Username: `admin`
-- Password: `Admin@123`
+## Security Notes
+
+- All secrets must be set via environment variables (see `.env.example`)
+- Never commit `.env` file
+- Change default admin password before any real deployment
+- CORS is restricted to configured origins
+- Login has basic rate limiting
+- Security headers are added automatically
 
 ---
 
-## Tech Stack
-- **Edge:** Python, YOLOv11, OpenCV, PaddleOCR
-- **Backend:** FastAPI, PostgreSQL, JWT
-- **Frontend:** React, Vite, Tailwind CSS
-- **Infra:** Docker
+## Features
+- Human & Vehicle Detection + Tracking
+- Face Detection (InsightFace / OpenCV fallback)
+- ANPR (India + Nepal + Bhutan)
+- Virtual Fence + Night Enhancement
+- Real-time Alerts + Role-based Access
+- Vehicle Watchlist
+- Multi-camera Fusion structure
 
 ---
 
-## Notes
-This is an advanced working prototype developed for Smart India Hackathon / SSB problem statement.  
-Suitable for demonstration and further production hardening.
+## Important
+This is an advanced working prototype for Smart India Hackathon / demonstration purposes.  
+For real SSB deployment, additional field testing, security audit, and hardening are required.
