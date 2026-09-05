@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { Activity, AlertTriangle, Camera, Wifi, WifiOff } from "lucide-react";
 import { useAlertsWebSocket } from "../hooks/useAlertsWebSocket";
-import { bopFromCamera, sectorFromBop } from "../utils/bop";
+import { bopFromCamera, frontierFromBop } from "../utils/bop";
 
 export default function Dashboard() {
   const token = localStorage.getItem("token");
@@ -20,7 +20,7 @@ export default function Dashboard() {
     return alerts.filter((a) => {
       const bop = bopFromCamera(a.camera_id);
       if (bopFilter !== "ALL" && bop !== bopFilter) return false;
-      if (sectorFilter !== "ALL" && sectorFromBop(bop) !== sectorFilter) return false;
+      if (sectorFilter !== "ALL" && frontierFromBop(bop) !== sectorFilter) return false;
       return true;
     });
   }, [alerts, bopFilter, sectorFilter]);
@@ -61,17 +61,19 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <label className="text-slate-400 text-sm">Sector</label>
+          <label className="text-slate-400 text-sm">Frontier</label>
           <select
             value={sectorFilter}
             onChange={(e) => setSectorFilter(e.target.value)}
             className="bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm"
           >
-            <option value="ALL">All sectors</option>
-            <option value="North">North (1–250)</option>
-            <option value="East">East (251–500)</option>
-            <option value="South">South (501–750)</option>
-            <option value="West">West (751–1000)</option>
+            <option value="ALL">All Frontiers</option>
+            <option value="Ranikhet">Ranikhet FTR</option>
+            <option value="Lucknow">Lucknow FTR</option>
+            <option value="Patna">Patna FTR</option>
+            <option value="Siliguri">Siliguri FTR</option>
+            <option value="Tezpur">Tezpur FTR</option>
+            <option value="Guwahati">Guwahati FTR</option>
           </select>
           <label className="text-slate-400 text-sm">BOP</label>
           <select
@@ -81,7 +83,7 @@ export default function Dashboard() {
           >
             <option value="ALL">All BOPs ({bops.length || 0})</option>
             {bops.map((b) => (
-              <option key={b} value={b}>{b} · {sectorFromBop(b)}</option>
+              <option key={b} value={b}>{b} · {frontierFromBop(b)}</option>
             ))}
           </select>
           <button onClick={refresh} className="text-sm text-blue-400 hover:text-blue-300 ml-auto">
@@ -108,7 +110,7 @@ export default function Dashboard() {
                         {alert.alert_type} {alert.subtype ? `• ${alert.subtype}` : ""}
                       </p>
                       <p className="text-slate-400 text-sm mt-1">
-                        {sectorFromBop(bopFromCamera(alert.camera_id))} · {bopFromCamera(alert.camera_id)} · {alert.camera_id}
+                        {frontierFromBop(bopFromCamera(alert.camera_id))} · {bopFromCamera(alert.camera_id)} · {alert.camera_id}
                       </p>
                     </div>
                     <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded">
