@@ -11,6 +11,8 @@ export default function Navbar() {
     navigate("/login");
   };
 
+  const link = ({ isActive }) => (isActive ? "text-blue-400" : "text-slate-300 hover:text-white");
+
   return (
     <nav className="bg-slate-900 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -19,12 +21,13 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-center gap-5 text-sm">
-        <NavLink to="/" className={({isActive}) => isActive ? "text-blue-400" : "text-slate-300 hover:text-white"}>Alerts</NavLink>
-        <NavLink to="/watchlist" className={({isActive}) => isActive ? "text-blue-400" : "text-slate-300 hover:text-white"}>Watchlist</NavLink>
-        <NavLink to="/global-tracks" className={({isActive}) => isActive ? "text-blue-400" : "text-slate-300 hover:text-white"}>Global Tracks</NavLink>
-        <NavLink to="/reports" className={({isActive}) => isActive ? "text-blue-400" : "text-slate-300 hover:text-white"}>Reports</NavLink>
+        <NavLink to="/" className={link}>Alerts</NavLink>
+        <NavLink to="/bops" className={link}>BOP Map</NavLink>
+        <NavLink to="/watchlist" className={link}>Watchlist</NavLink>
+        <NavLink to="/global-tracks" className={link}>Global Tracks</NavLink>
+        <NavLink to="/reports" className={link}>Reports</NavLink>
         {user?.role === "admin" && (
-          <NavLink to="/users" className={({isActive}) => isActive ? "text-blue-400" : "text-slate-300 hover:text-white"}>Users</NavLink>
+          <NavLink to="/users" className={link}>Users</NavLink>
         )}
 
         <div className="text-right ml-4">

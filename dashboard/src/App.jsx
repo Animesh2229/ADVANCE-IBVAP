@@ -6,6 +6,7 @@ import Watchlist from "./pages/Watchlist";
 import Users from "./pages/Users";
 import Reports from "./pages/Reports";
 import GlobalTracks from "./pages/GlobalTracks";
+import BopsMap from "./pages/BopsMap";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -20,6 +21,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/bops" element={<ProtectedRoute><BopsMap /></ProtectedRoute>} />
           <Route path="/watchlist" element={<ProtectedRoute><Watchlist /></ProtectedRoute>} />
           <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
