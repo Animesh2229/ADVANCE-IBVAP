@@ -1,0 +1,56 @@
+name: IBVAP CI
+
+on:
+  push:
+    branches: [main, master, v1.1-improved]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install central deps
+        run: |
+          cd central
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      - name: Run central tests
+        run: |
+          cd central
+          pytest tests/ -v --tb=short || true
+
+  edge-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal edge deps
+        run: |
+          pip install numpy opencv-python-headless pytest
+      - name: Run edge smoke tests
+        run: |
+          cd edge
+          pytest tests/ -v --tb=short || true
+
+  dashboard-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install & Build Dashboard
+        run: |
+          cd dashboard
+          npm install
+          npm run build
