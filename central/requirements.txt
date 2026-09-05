@@ -9,3 +9,4 @@ pydantic>=2.0
 python-multipart
 redis
 httpx
+websockets
