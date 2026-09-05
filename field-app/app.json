@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "IBVAP Field",
+    "slug": "ibvap-field-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#020617"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "gov.ssb.ibvap.field"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#020617"
+      },
+      "package": "gov.ssb.ibvap.field"
+    }
+  }
+}

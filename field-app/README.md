@@ -1,21 +1,34 @@
 # IBVAP Field App (Patrolling Jawans)
 
-React Native (Expo) starter for field personnel.
+Full React Native (Expo) mobile application for SSB field personnel.
 
 ## Features
-- Login
-- Critical Alerts list
-- Acknowledge / "Main site par ja raha hoon" actions
-- Push notification ready structure
+- Secure Login (JWT)
+- Live Critical Alerts feed
+- Acknowledge Alert
+- "Main site par ja raha hoon" (En-route) action
+- Alert Detail view
+- Pull-to-refresh
+- Dark theme optimized for field use
+- Ready for Push Notifications (Expo Notifications)
 
 ## Setup
+
 ```bash
-npx create-expo-app IBVAPFieldApp
-cd IBVAPFieldApp
-npx expo install expo-notifications expo-device @react-native-async-storage/async-storage
+cd field-app
+npm install
 ```
 
-Then copy the screens and services from the main documentation.
+**Important:** Edit `src/services/api.js` and set your Central server IP:
 
-## Note
-This is a starter structure. Full source can be expanded as needed.
+```js
+const BASE_URL = 'http://192.168.x.x:8000/api/v1';
+```
+
+Then start:
+
+```bash
+npx expo start
+```
+
+Scan QR with Expo Go app (Android/iOS).

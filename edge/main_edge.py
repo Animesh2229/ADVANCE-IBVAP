@@ -1,3 +1,14 @@
+"""
+=============================================================
+IBVAP Edge Device - Main Entry Point
+=============================================================
+Yeh file Edge device pe chalati hai.
+Camera se frames leti hai → AI Pipeline se process karti hai → Alerts bhejti hai.
+
+Kaise chalaye:
+    python main_edge.py
+"""
+
 import cv2
 import time
 import yaml
@@ -5,13 +16,18 @@ import numpy as np
 import sys
 import os
 
+# Current folder ko path mein add karo taaki imports kaam karein
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from ai_pipeline.pipeline import EdgeAIPipeline
 from decision.alert_engine import AlertEngine
 
+
 def load_config(path="configs/edge_config.yaml"):
-    # Try multiple possible locations
+    """
+    Configuration file load karta hai.
+    Agar file nahi milti to default settings use karta hai.
+    """
     possible_paths = [
         path,
         os.path.join(os.path.dirname(__file__), "configs", "edge_config.yaml"),
@@ -21,7 +37,8 @@ def load_config(path="configs/edge_config.yaml"):
         if os.path.exists(p):
             with open(p) as f:
                 return yaml.safe_load(f)
-    # Default config
+
+    # Default config (agar koi file nahi mili)
     return {
         "mode": "low_bandwidth",
         "camera": {"source": 0, "camera_id": "BOP-001-CAM-01"},
@@ -29,23 +46,30 @@ def load_config(path="configs/edge_config.yaml"):
         "central": {"url": "http://localhost:8000/api/v1/alerts/secure"}
     }
 
+
 def main():
+    """
+    Main loop: Camera se frame lo → Process karo → Alert bhejo → Visualize
+    """
     config = load_config()
     mode = config.get("mode", "low_bandwidth")
     cam_cfg = config.get("camera", {})
-    camera_source = cam_cfg.get("source", 0)
+    camera_source = cam_cfg.get("source", 0)          # 0 = default webcam
     camera_id = cam_cfg.get("camera_id", "BOP-001-CAM-01")
 
     print(f"[IBVAP] Starting in **{mode.upper()}** mode")
     print(f"[IBVAP] Camera ID: {camera_id}")
 
+    # AI Pipeline aur Alert Engine start karo
     pipeline = EdgeAIPipeline(config)
     alerter = AlertEngine(central_url=config.get("central", {}).get("url"))
 
+    # Virtual fence points (agar enabled hai)
     fence_points = None
     if config.get("virtual_fence", {}).get("enabled"):
         fence_points = config["virtual_fence"].get("points")
 
+    # Camera open karo
     cap = cv2.VideoCapture(camera_source)
     if not cap.isOpened():
         print(f"ERROR: Cannot open camera source: {camera_source}")
@@ -60,24 +84,29 @@ def main():
             time.sleep(0.3)
             continue
 
+        # AI Pipeline se process karo
         result = pipeline.process(frame, camera_id, virtual_fence_points=fence_points)
 
+        # Alerts generate karo
         alerts = alerter.evaluate_from_pipeline(result)
 
+        # Har alert ko securely Central pe bhejo
         for alert in alerts:
             print(f"\n[ALERT] {alert['type']} | {alert.get('subtype')} | Conf: {alert['confidence']:.2f}")
             secure = alerter.create_secure_alert(alert)
             alerter.send_to_central(secure)
 
-        # Visualization
+        # ========== Visualization (Demo ke liye) ==========
         vis = frame.copy()
         for obj in result.get("tracked_objects", []):
             x1, y1, x2, y2 = map(int, obj["bbox"])
+            # Person = Green, Vehicle = Orange
             color = (0, 255, 0) if obj["label"] == "person" else (0, 165, 255)
             cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
             cv2.putText(vis, f"ID:{obj['track_id']} {obj['label']}", (x1, y1-8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
+        # Virtual fence draw karo
         if fence_points:
             pts = np.array(fence_points, np.int32).reshape((-1, 1, 2))
             cv2.polylines(vis, [pts], True, (0, 0, 255), 2)
@@ -86,9 +115,11 @@ def main():
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+    # Cleanup
     cap.release()
     cv2.destroyAllWindows()
     print("[IBVAP] Edge stopped.")
+
 
 if __name__ == "__main__":
     main()
