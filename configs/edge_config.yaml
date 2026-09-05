@@ -1,10 +1,61 @@
+# ============================================================
+# IBVAP Edge Config - One BOP, up to 16 cameras
+# ============================================================
 mode: "low_bandwidth"          # "full" or "low_bandwidth"
 
-camera:
-  source: 0                    # 0 for webcam, or RTSP URL
-  camera_id: "BOP-001-CAM-01"
-  width: 1280
-  height: 720
+bop_id: "BOP-001"
+
+# List of cameras under this BOP (max 16 recommended)
+# source: 0 / 1 / 2 for local devices, or RTSP URL string
+cameras:
+  - camera_id: "BOP-001-CAM-01"
+    source: 0
+    enabled: true
+  - camera_id: "BOP-001-CAM-02"
+    source: 1
+    enabled: false
+  - camera_id: "BOP-001-CAM-03"
+    source: "rtsp://user:pass@10.0.0.11:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-04"
+    source: "rtsp://user:pass@10.0.0.12:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-05"
+    source: "rtsp://10.0.0.13:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-06"
+    source: "rtsp://10.0.0.14:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-07"
+    source: "rtsp://10.0.0.15:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-08"
+    source: "rtsp://10.0.0.16:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-09"
+    source: "rtsp://10.0.0.17:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-10"
+    source: "rtsp://10.0.0.18:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-11"
+    source: "rtsp://10.0.0.19:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-12"
+    source: "rtsp://10.0.0.20:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-13"
+    source: "rtsp://10.0.0.21:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-14"
+    source: "rtsp://10.0.0.22:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-15"
+    source: "rtsp://10.0.0.23:554/stream1"
+    enabled: false
+  - camera_id: "BOP-001-CAM-16"
+    source: "rtsp://10.0.0.24:554/stream1"
+    enabled: false
 
 ai:
   detector_model: "yolo11n.pt"
