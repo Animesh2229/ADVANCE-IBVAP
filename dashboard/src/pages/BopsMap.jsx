@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import api from "../api/axios";
-import { bopFromCamera, sectorFromBop, bopPosition } from "../utils/bop";
-
-const SECTORS = ["North", "East", "South", "West"];
+import { bopFromCamera, frontierFromBop, bopPosition, FRONTIERS } from "../utils/bop";
 
 export default function BopsMap() {
   const [alerts, setAlerts] = useState([]);
-  const [sectorFilter, setSectorFilter] = useState("ALL");
+  const [frontierFilter, setFrontierFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,7 +37,13 @@ export default function BopsMap() {
     for (const a of alerts) {
       const bop = bopFromCamera(a.camera_id);
       if (!map[bop]) {
-        map[bop] = { bop, sector: sectorFromBop(bop), count: 0, high: 0, ...bopPosition(bop) };
+        map[bop] = {
+          bop,
+          sector: frontierFromBop(bop),
+          count: 0,
+          high: 0,
+          ...bopPosition(bop),
+        };
       }
       map[bop].count += 1;
       if (a.priority === "HIGH") map[bop].high += 1;
@@ -48,12 +52,12 @@ export default function BopsMap() {
   }, [alerts]);
 
   const filtered = useMemo(() => {
-    if (sectorFilter === "ALL") return bopStats;
-    return bopStats.filter((b) => b.sector === sectorFilter);
-  }, [bopStats, sectorFilter]);
+    if (frontierFilter === "ALL") return bopStats;
+    return bopStats.filter((b) => b.sector === frontierFilter);
+  }, [bopStats, frontierFilter]);
 
-  const sectorCounts = useMemo(() => {
-    const c = { North: 0, East: 0, South: 0, West: 0 };
+  const frontierCounts = useMemo(() => {
+    const c = Object.fromEntries(FRONTIERS.map((f) => [f, 0]));
     bopStats.forEach((b) => {
       if (c[b.sector] !== undefined) c[b.sector] += 1;
     });
@@ -65,37 +69,37 @@ export default function BopsMap() {
       <Navbar />
       <div className="p-6 max-w-7xl mx-auto">
         <div className="flex flex-wrap items-center gap-3 mb-6">
-          <h1 className="text-white text-xl font-semibold mr-4">BOP Map \u00b7 Sectors</h1>
+          <h1 className="text-white text-xl font-semibold mr-4">SSB Frontiers \u00b7 BOP Map</h1>
           <select
-            value={sectorFilter}
-            onChange={(e) => setSectorFilter(e.target.value)}
+            value={frontierFilter}
+            onChange={(e) => setFrontierFilter(e.target.value)}
             className="bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm"
           >
-            <option value="ALL">All sectors</option>
-            {SECTORS.map((s) => (
+            <option value="ALL">All Frontiers</option>
+            {FRONTIERS.map((s) => (
               <option key={s} value={s}>
-                {s} ({sectorCounts[s] || 0})
+                {s} ({frontierCounts[s] || 0})
               </option>
             ))}
           </select>
           <span className="text-slate-500 text-sm ml-auto">
-            {filtered.length} active BOP(s) \u00b7 from recent alerts
+            {filtered.length} active BOP(s) \u00b7 SSB / Police ops
           </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          {SECTORS.map((s) => (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          {FRONTIERS.map((s) => (
             <button
               key={s}
-              onClick={() => setSectorFilter(s === sectorFilter ? "ALL" : s)}
+              onClick={() => setFrontierFilter(s === frontierFilter ? "ALL" : s)}
               className={`rounded-xl border p-3 text-left transition ${
-                sectorFilter === s
+                frontierFilter === s
                   ? "border-blue-500 bg-slate-800"
                   : "border-slate-700 bg-slate-900 hover:border-slate-500"
               }`}
             >
-              <p className="text-slate-400 text-xs">{s} Sector</p>
-              <p className="text-white text-lg font-semibold">{sectorCounts[s] || 0} BOPs</p>
+              <p className="text-slate-400 text-xs">{s} FTR</p>
+              <p className="text-white text-lg font-semibold">{frontierCounts[s] || 0} BOPs</p>
             </button>
           ))}
         </div>
@@ -109,20 +113,12 @@ export default function BopsMap() {
               backgroundSize: "40px 40px",
             }}
           />
-          {["North", "East", "South", "West"].map((label, i) => (
-            <span
-              key={label}
-              className="absolute text-slate-600 text-xs font-medium"
-              style={{
-                top: i === 0 ? 8 : i === 2 ? "auto" : "45%",
-                bottom: i === 2 ? 8 : "auto",
-                left: i === 3 ? 8 : i === 1 ? "auto" : "45%",
-                right: i === 1 ? 8 : "auto",
-              }}
-            >
-              {label}
-            </span>
-          ))}
+          <span className="absolute top-2 left-3 text-slate-600 text-xs">
+            West \u2190 Indo-Nepal / Bhutan border belt \u2192 East
+          </span>
+          <span className="absolute bottom-2 left-3 text-slate-600 text-xs">
+            SSB Frontiers (Ranikhet \u2192 Guwahati)
+          </span>
           {loading && (
             <p className="absolute inset-0 flex items-center justify-center text-slate-500">Loading\u2026</p>
           )}
@@ -135,7 +131,7 @@ export default function BopsMap() {
             <div
               key={b.bop}
               title={`${b.bop} \u00b7 ${b.sector} \u00b7 ${b.count} alerts`}
-              className={`absolute w-3 h-3 rounded-full -translate-x-1/2 -translate-y-1/2 cursor-default ${
+              className={`absolute w-3 h-3 rounded-full -translate-x-1/2 -translate-y-1/2 ${
                 b.high > 0 ? "bg-red-500 ring-2 ring-red-400/50" : "bg-emerald-400"
               }`}
               style={{ left: `${b.x}%`, top: `${b.y}%` }}
@@ -158,7 +154,7 @@ export default function BopsMap() {
                   >
                     <div>
                       <p className="text-white text-sm font-medium">{b.bop}</p>
-                      <p className="text-slate-500 text-xs">{b.sector}</p>
+                      <p className="text-slate-500 text-xs">{b.sector} Frontier</p>
                     </div>
                     <div className="text-right">
                       <p className="text-slate-300 text-sm">{b.count} alerts</p>
