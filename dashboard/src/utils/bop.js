@@ -13,30 +13,47 @@ export function bopNumber(bopId) {
 }
 
 /**
- * Sector from BOP number (1000 BOPs, 4 sectors).
+ * SSB Frontiers (real force structure).
+ * ~1000 BOPs mapped across 6 Frontiers for demo/ops view.
  */
-export function sectorFromBop(bopId) {
+export const FRONTIERS = [
+  "Ranikhet",
+  "Lucknow",
+  "Patna",
+  "Siliguri",
+  "Tezpur",
+  "Guwahati",
+];
+
+export function frontierFromBop(bopId) {
   const n = bopNumber(bopId);
   if (n <= 0) return "Unassigned";
-  if (n <= 250) return "North";
-  if (n <= 500) return "East";
-  if (n <= 750) return "South";
-  return "West";
+  if (n <= 167) return "Ranikhet";
+  if (n <= 334) return "Lucknow";
+  if (n <= 500) return "Patna";
+  if (n <= 667) return "Siliguri";
+  if (n <= 834) return "Tezpur";
+  return "Guwahati";
 }
 
-/** Stable pseudo position on a 2D board for map view */
+export function sectorFromBop(bopId) {
+  return frontierFromBop(bopId);
+}
+
 export function bopPosition(bopId) {
   const n = bopNumber(bopId) || 1;
-  const sector = sectorFromBop(bopId);
-  const sectorOrigin = {
-    North: { x: 20, y: 15 },
-    East: { x: 65, y: 20 },
-    South: { x: 55, y: 65 },
-    West: { x: 15, y: 55 },
-    Unassigned: { x: 50, y: 50 },
+  const frontier = frontierFromBop(bopId);
+  const origin = {
+    Ranikhet: { x: 12, y: 18 },
+    Lucknow: { x: 28, y: 42 },
+    Patna: { x: 48, y: 48 },
+    Siliguri: { x: 62, y: 28 },
+    Tezpur: { x: 78, y: 35 },
+    Guwahati: { x: 88, y: 48 },
+    Unassigned: { x: 50, y: 80 },
   };
-  const o = sectorOrigin[sector] || sectorOrigin.Unassigned;
-  const dx = (n * 17) % 25;
-  const dy = (n * 13) % 20;
-  return { x: Math.min(92, o.x + dx), y: Math.min(88, o.y + dy), sector };
+  const o = origin[frontier] || origin.Unassigned;
+  const dx = (n * 17) % 12;
+  const dy = (n * 13) % 14;
+  return { x: Math.min(95, o.x + dx), y: Math.min(90, o.y + dy), frontier, sector: frontier };
 }

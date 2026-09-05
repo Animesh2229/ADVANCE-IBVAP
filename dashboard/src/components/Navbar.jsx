@@ -22,7 +22,7 @@ export default function Navbar() {
 
       <div className="flex items-center gap-5 text-sm">
         <NavLink to="/" className={link}>Alerts</NavLink>
-        <NavLink to="/bops" className={link}>BOP Map</NavLink>
+        <NavLink to="/bops" className={link}>SSB Map</NavLink>
         <NavLink to="/watchlist" className={link}>Watchlist</NavLink>
         <NavLink to="/global-tracks" className={link}>Global Tracks</NavLink>
         <NavLink to="/reports" className={link}>Reports</NavLink>
