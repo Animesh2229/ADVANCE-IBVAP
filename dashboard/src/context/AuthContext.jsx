@@ -17,12 +17,13 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (username, password) => {
-    const formData = new FormData();
-    formData.append("username", username);
-    formData.append("password", password);
+    // OAuth2PasswordRequestForm expects application/x-www-form-urlencoded
+    const params = new URLSearchParams();
+    params.append("username", username);
+    params.append("password", password);
 
-    const res = await api.post("/auth/login", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
+    const res = await api.post("/auth/login", params, {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
 
     const { access_token, role, full_name } = res.data;
@@ -41,7 +42,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
