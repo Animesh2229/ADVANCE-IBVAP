@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -22,6 +22,11 @@ try:
 except ImportError:
     fusion_engine = None
 
+try:
+    from api.websocket import manager as ws_manager
+except ImportError:
+    ws_manager = None
+
 # ===================== CONFIG FROM ENV =====================
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY or len(SECRET_KEY) < 32:
@@ -40,7 +45,7 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
-app = FastAPI(title="IBVAP Central API", version="1.0.0", docs_url="/docs" if ENVIRONMENT == "development" else None)
+app = FastAPI(title="IBVAP Central API", version="1.1.0", docs_url="/docs" if ENVIRONMENT == "development" else None)
 
 # ===================== CORS (Restricted) =====================
 app.add_middleware(
@@ -54,10 +59,10 @@ app.add_middleware(
 # ===================== Simple In-Memory Rate Limiter =====================
 login_attempts = defaultdict(list)
 
-def check_rate_limit(ip: str, max_attempts: int = 5, window_window: int = 60):
+def check_rate_limit(ip: str, max_attempts: int = 5, time_window: int = 60):
     now = time.time()
     attempts = login_attempts[ip]
-    login_attempts[ip] = [t for t in attempts if now - t < window]
+    login_attempts[ip] = [t for t in attempts if now - t < time_window]
     if len(login_attempts[ip]) >= max_attempts:
         return False
     login_attempts[ip].append(now)
@@ -146,7 +151,7 @@ async def startup():
 @app.post("/api/v1/auth/login", response_model=Token)
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(client_ip, max_attempts=5, window=60):
+    if not check_rate_limit(client_ip, max_attempts=5, time_window=60):
         raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
 
     result = await db.execute(select(User).where(User.username == form_data.username))
@@ -220,6 +225,24 @@ async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_
     )
     db.add(new_alert)
     await db.commit()
+    await db.refresh(new_alert)
+
+    if ws_manager is not None:
+        try:
+            await ws_manager.broadcast({
+                "type": "new_alert",
+                "data": {
+                    "id": new_alert.id,
+                    "camera_id": new_alert.camera_id,
+                    "alert_type": new_alert.alert_type,
+                    "priority": new_alert.priority,
+                    "confidence": new_alert.confidence,
+                    "timestamp": new_alert.timestamp.isoformat() if new_alert.timestamp else None,
+                    "status": new_alert.status
+                }
+            })
+        except Exception:
+            pass
 
     if fusion_engine is not None:
         try:
@@ -233,7 +256,7 @@ async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_
         except Exception:
             pass
 
-    return {"status": "accepted"}
+    return {"status": "accepted", "alert_id": new_alert.id}
 
 @app.post("/api/v1/alerts/{alert_id}/action")
 async def alert_action(alert_id: int, data: dict,
@@ -280,10 +303,31 @@ async def get_active_global_tracks(current_user: User = Depends(get_current_user
         return {}
     return fusion_engine.get_active_tracks()
 
+@app.websocket("/ws/alerts")
+async def websocket_alerts(websocket: WebSocket):
+    if ws_manager is None:
+        await websocket.close(code=1011)
+        return
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        await ws_manager.disconnect(websocket)
+    except Exception:
+        await ws_manager.disconnect(websocket)
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "IBVAP Central"}
+    return {
+        "status": "ok",
+        "service": "IBVAP Central",
+        "version": "1.1.0",
+        "websocket_clients": len(ws_manager.active_connections) if ws_manager else 0
+    }
 
 @app.get("/")
 async def root():
-    return {"message": "IBVAP Central API is running"}
+    return {"message": "IBVAP Central API is running", "version": "1.1.0"}
