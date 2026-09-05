@@ -15,7 +15,12 @@ import os
 import time
 import secrets
 
-from db.models import Base, User, Alert, VehicleWatchlist
+from db.models import Base, User, Alert, VehicleWatchlist, ImmutableEvent
+
+try:
+    from services.chain import append_event
+except ImportError:
+    append_event = None
 
 try:
     from services.fusion import fusion_engine
@@ -27,11 +32,10 @@ try:
 except ImportError:
     ws_manager = None
 
-# ===================== CONFIG FROM ENV =====================
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY or len(SECRET_KEY) < 32:
     SECRET_KEY = secrets.token_urlsafe(48)
-    print("[WARNING] SECRET_KEY not set or too short. Using temporary key. Set SECRET_KEY in environment for production!")
+    print("[WARNING] SECRET_KEY not set or too short. Using temporary key.")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))
@@ -47,7 +51,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 app = FastAPI(title="IBVAP Central API", version="1.1.0", docs_url="/docs" if ENVIRONMENT == "development" else None)
 
-# ===================== CORS (Restricted) =====================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -56,7 +59,6 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-# Simple in-memory rate limit for login
 _login_attempts = defaultdict(list)
 
 async def get_db():
@@ -129,7 +131,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     now = time.time()
     _login_attempts[client_ip] = [t for t in _login_attempts[client_ip] if now - t < 60]
     if len(_login_attempts[client_ip]) >= 10:
-        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+        raise HTTPException(status_code=429, detail="Too many login attempts")
 
     result = await db.execute(select(User).where(User.username == form_data.username))
     user = result.scalar_one_or_none()
@@ -166,33 +168,17 @@ async def register(data: dict, current_user: User = Depends(require_roles(["admi
 
 @app.get("/api/v1/me")
 async def get_me(current_user: User = Depends(get_current_user)):
-    return {
-        "username": current_user.username,
-        "full_name": current_user.full_name,
-        "role": current_user.role,
-        "email": current_user.email,
-    }
+    return {"username": current_user.username, "full_name": current_user.full_name, "role": current_user.role, "email": current_user.email}
 
 
 @app.get("/api/v1/users")
 async def list_users(current_user: User = Depends(require_roles(["admin"])), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User))
     users = result.scalars().all()
-    return [
-        {
-            "id": u.id,
-            "username": u.username,
-            "full_name": u.full_name,
-            "email": u.email,
-            "role": u.role,
-            "is_active": u.is_active,
-        }
-        for u in users
-    ]
+    return [{"id": u.id, "username": u.username, "full_name": u.full_name, "email": u.email, "role": u.role, "is_active": u.is_active} for u in users]
 
 
 def _bop_from_camera(camera_id: str) -> str:
-    """BOP-001-CAM-03 → BOP-001"""
     if not camera_id:
         return "UNKNOWN"
     if "-CAM" in camera_id:
@@ -202,13 +188,8 @@ def _bop_from_camera(camera_id: str) -> str:
 
 
 @app.get("/api/v1/alerts")
-async def get_alerts(
-    skip: int = 0,
-    limit: int = 50,
-    bop: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
+async def get_alerts(skip: int = 0, limit: int = 50, bop: Optional[str] = None,
+                     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     q = select(Alert).order_by(Alert.timestamp.desc())
     if bop:
         q = q.where(Alert.camera_id.startswith(bop))
@@ -218,7 +199,6 @@ async def get_alerts(
 
 @app.get("/api/v1/bops")
 async def list_bops(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Active BOPs derived from recent alerts (scales to 1000+)."""
     result = await db.execute(select(Alert.camera_id).order_by(Alert.timestamp.desc()).limit(2000))
     cams = result.scalars().all()
     bops = sorted({_bop_from_camera(c) for c in cams if c})
@@ -243,23 +223,34 @@ async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_
     await db.commit()
     await db.refresh(new_alert)
 
+    if append_event is not None:
+        try:
+            eh = await append_event(
+                db,
+                event_type=new_alert.alert_type or "ALERT",
+                data={"alert_id": new_alert.id, "camera_id": new_alert.camera_id, "priority": new_alert.priority},
+                source=new_alert.camera_id or "edge",
+            )
+            new_alert.event_hash = eh
+            await db.commit()
+        except Exception:
+            pass
+
     if ws_manager is not None:
         try:
-            await ws_manager.broadcast(
-                {
-                    "type": "new_alert",
-                    "data": {
-                        "id": new_alert.id,
-                        "camera_id": new_alert.camera_id,
-                        "alert_type": new_alert.alert_type,
-                        "subtype": new_alert.subtype,
-                        "confidence": new_alert.confidence,
-                        "priority": new_alert.priority,
-                        "status": new_alert.status,
-                        "timestamp": new_alert.timestamp.isoformat() if new_alert.timestamp else None,
-                    },
-                }
-            )
+            await ws_manager.broadcast({
+                "type": "new_alert",
+                "data": {
+                    "id": new_alert.id,
+                    "camera_id": new_alert.camera_id,
+                    "alert_type": new_alert.alert_type,
+                    "subtype": new_alert.subtype,
+                    "confidence": new_alert.confidence,
+                    "priority": new_alert.priority,
+                    "status": new_alert.status,
+                    "timestamp": new_alert.timestamp.isoformat() if new_alert.timestamp else None,
+                },
+            })
         except Exception:
             pass
 
@@ -279,12 +270,7 @@ async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_
 
 
 @app.post("/api/v1/alerts/{alert_id}/action")
-async def alert_action(
-    alert_id: int,
-    data: dict,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
+async def alert_action(alert_id: int, data: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Alert).where(Alert.id == alert_id))
     alert = result.scalar_one_or_none()
     if not alert:
@@ -301,11 +287,7 @@ async def get_watchlist(current_user: User = Depends(get_current_user), db: Asyn
 
 
 @app.post("/api/v1/watchlist")
-async def add_watchlist(
-    data: dict,
-    current_user: User = Depends(require_roles(["admin", "commander"])),
-    db: AsyncSession = Depends(get_db),
-):
+async def add_watchlist(data: dict, current_user: User = Depends(require_roles(["admin", "commander"])), db: AsyncSession = Depends(get_db)):
     item = VehicleWatchlist(
         plate_number=data.get("plate_number"),
         country=data.get("country", "IND"),
