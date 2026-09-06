@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 /**
  * Real-time alerts via WebSocket with polling fallback.
+ * Auth: httpOnly cookie (credentials: include).
  */
-export function useAlertsWebSocket(token) {
+export function useAlertsWebSocket() {
   const [alerts, setAlerts] = useState([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef(null);
@@ -12,9 +13,7 @@ export function useAlertsWebSocket(token) {
   const fetchAlerts = useCallback(async () => {
     try {
       const base = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
-      const res = await fetch(`${base}/alerts?limit=40`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${base}/alerts?limit=40`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setAlerts(data);
@@ -22,15 +21,11 @@ export function useAlertsWebSocket(token) {
     } catch (e) {
       console.warn("Polling failed", e);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
-    if (!token) return;
-
-    // Initial fetch
     fetchAlerts();
 
-    // Try WebSocket
     const wsBase = (import.meta.env.VITE_API_URL || "http://localhost:8000")
       .replace("http", "ws")
       .replace("/api/v1", "");
@@ -42,7 +37,6 @@ export function useAlertsWebSocket(token) {
 
       ws.onopen = () => {
         setConnected(true);
-        console.log("[WS] Connected");
         if (pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
@@ -60,7 +54,6 @@ export function useAlertsWebSocket(token) {
 
       ws.onclose = () => {
         setConnected(false);
-        console.log("[WS] Disconnected, falling back to polling");
         if (!pollRef.current) {
           pollRef.current = setInterval(fetchAlerts, 5000);
         }
@@ -78,7 +71,7 @@ export function useAlertsWebSocket(token) {
       if (wsRef.current) wsRef.current.close();
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [token, fetchAlerts]);
+  }, [fetchAlerts]);
 
   return { alerts, connected, refresh: fetchAlerts };
 }

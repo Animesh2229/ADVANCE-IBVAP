@@ -94,6 +94,7 @@ class EdgeAIPipeline:
             if obj["label"] == "person" and obj["confidence"] > 0.6:
                 face_result = self.face_engine.process(enhanced_frame, obj["bbox"])
                 if face_result:
+                    face_result["track_id"] = obj["track_id"]
                     faces.append(face_result)
 
         # Step 5: Vehicles pe Number Plate Recognition chalao
@@ -102,6 +103,7 @@ class EdgeAIPipeline:
             if obj["label"] in ["car", "truck", "bus", "motorcycle"] and obj["confidence"] > 0.55:
                 plate = self.anpr.recognize(enhanced_frame, obj["bbox"])
                 if plate:
+                    plate["track_id"] = obj["track_id"]
                     plates.append(plate)
 
         # Step 6: Virtual Fence check (agar enabled hai)

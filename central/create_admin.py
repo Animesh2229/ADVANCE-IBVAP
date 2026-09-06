@@ -31,7 +31,8 @@ async def create_admin():
                 email=ADMIN_EMAIL,
                 hashed_password=pwd_context.hash(ADMIN_PASSWORD),
                 full_name="System Administrator",
-                role="admin"
+                role="admin",
+                must_change_password=True,
             )
             db.add(admin)
             await db.commit()

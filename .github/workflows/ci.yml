@@ -15,15 +15,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install central deps
+      - name: Install central test deps
         run: |
-          cd central
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio
+          pip install pytest cryptography numpy
       - name: Run central tests
         run: |
           cd central
-          pytest tests/ -v --tb=short || true
+          PYTHONPATH=. pytest tests/ -v --tb=short
 
   edge-smoke:
     runs-on: ubuntu-latest
@@ -35,11 +33,11 @@ jobs:
           python-version: "3.11"
       - name: Install minimal edge deps
         run: |
-          pip install numpy opencv-python-headless pytest
+          pip install numpy pytest cryptography requests
       - name: Run edge smoke tests
         run: |
           cd edge
-          pytest tests/ -v --tb=short || true
+          PYTHONPATH=. pytest tests/ -v --tb=short
 
   dashboard-build:
     runs-on: ubuntu-latest

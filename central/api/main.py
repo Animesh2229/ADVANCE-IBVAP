@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, status, Request, WebSocket, WebSocketDisconnect, Cookie, Header, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,7 +15,7 @@ import os
 import time
 import secrets
 
-from db.models import Base, User, Alert, VehicleWatchlist, ImmutableEvent
+from db.models import Base, User, Alert, VehicleWatchlist, ImmutableEvent, FaceEmbedding
 
 try:
     from services.chain import append_event
@@ -26,6 +26,17 @@ try:
     from services.fusion import fusion_engine
 except ImportError:
     fusion_engine = None
+
+try:
+    from services.face_match import best_match
+except ImportError:
+    best_match = None
+
+try:
+    from services.edge_auth import load_secrets, unwrap_secure_body
+except ImportError:
+    load_secrets = None
+    unwrap_secure_body = None
 
 try:
     from api.websocket import manager as ws_manager
@@ -47,19 +58,20 @@ engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
-app = FastAPI(title="IBVAP Central API", version="1.1.0", docs_url="/docs" if ENVIRONMENT == "development" else None)
+app = FastAPI(title="IBVAP Central API", version="1.2.0", docs_url="/docs" if ENVIRONMENT == "development" else None)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-IBVAP-Signature", "X-IBVAP-Timestamp"],
 )
 
 _login_attempts = defaultdict(list)
+
 
 async def get_db():
     async with AsyncSessionLocal() as session:
@@ -74,6 +86,7 @@ class Token(BaseModel):
     token_type: str = "bearer"
     role: str
     full_name: Optional[str] = None
+    must_change_password: bool = False
 
 
 def verify_password(plain, hashed):
@@ -91,12 +104,36 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+def _set_auth_cookie(response: Response, token: str):
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=(ENVIRONMENT == "production"),
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+
+
+async def get_current_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    authorization: Optional[str] = Header(None),
+    access_token: Optional[str] = Cookie(None),
+):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    elif access_token:
+        token = access_token
+    if not token:
+        raise credentials_exception
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -125,7 +162,7 @@ async def startup():
         await conn.run_sync(Base.metadata.create_all)
 
 
-@app.post("/api/v1/auth/login", response_model=Token)
+@app.post("/api/v1/auth/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db), request: Request = None):
     client_ip = request.client.host if request and request.client else "unknown"
     now = time.time()
@@ -142,7 +179,37 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     user.last_login = datetime.utcnow()
     await db.commit()
     token = create_access_token(data={"sub": user.username, "role": user.role})
-    return {"access_token": token, "token_type": "bearer", "role": user.role, "full_name": user.full_name}
+    body = {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": user.role,
+        "full_name": user.full_name,
+        "must_change_password": bool(getattr(user, "must_change_password", False)),
+    }
+    response = JSONResponse(content=body)
+    _set_auth_cookie(response, token)
+    return response
+
+
+@app.post("/api/v1/auth/logout")
+async def logout():
+    response = JSONResponse(content={"msg": "logged out"})
+    response.delete_cookie("access_token", path="/")
+    return response
+
+
+@app.post("/api/v1/auth/change-password")
+async def change_password(data: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    current = data.get("current_password") or ""
+    new = data.get("new_password") or ""
+    if len(new) < 8:
+        raise HTTPException(status_code=400, detail="new_password must be at least 8 characters")
+    if not verify_password(current, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="current_password is incorrect")
+    current_user.hashed_password = get_password_hash(new)
+    current_user.must_change_password = False
+    await db.commit()
+    return {"msg": "password updated"}
 
 
 @app.post("/api/v1/auth/register")
@@ -160,6 +227,7 @@ async def register(data: dict, current_user: User = Depends(require_roles(["admi
         hashed_password=get_password_hash(password),
         full_name=data.get("full_name", username),
         role=data.get("role", "operator"),
+        must_change_password=True,
     )
     db.add(new_user)
     await db.commit()
@@ -168,7 +236,13 @@ async def register(data: dict, current_user: User = Depends(require_roles(["admi
 
 @app.get("/api/v1/me")
 async def get_me(current_user: User = Depends(get_current_user)):
-    return {"username": current_user.username, "full_name": current_user.full_name, "role": current_user.role, "email": current_user.email}
+    return {
+        "username": current_user.username,
+        "full_name": current_user.full_name,
+        "role": current_user.role,
+        "email": current_user.email,
+        "must_change_password": bool(getattr(current_user, "must_change_password", False)),
+    }
 
 
 @app.get("/api/v1/users")
@@ -206,18 +280,58 @@ async def list_bops(current_user: User = Depends(get_current_user), db: AsyncSes
 
 
 @app.post("/api/v1/alerts/secure")
-async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_db)):
+async def receive_secure_alert(
+    alert_data: dict,
+    db: AsyncSession = Depends(get_db),
+    x_ibvap_signature: Optional[str] = Header(None),
+    x_ibvap_timestamp: Optional[str] = Header(None),
+):
+    """Edge ingest: HMAC + Fernet required. Plaintext fields in the body are ignored."""
+    if load_secrets is None or unwrap_secure_body is None:
+        raise HTTPException(status_code=503, detail="edge auth module missing")
+    try:
+        fkey, hkey = load_secrets()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    try:
+        payload = unwrap_secure_body(
+            alert_data,
+            timestamp=x_ibvap_timestamp or alert_data.get("timestamp"),
+            signature=x_ibvap_signature or alert_data.get("signature"),
+            fernet_key=fkey,
+            hmac_secret=hkey,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    camera_id = payload.get("camera_id")
+    alert_type = payload.get("type") or payload.get("alert_type")
+    embedding = payload.get("embedding")
+    plate = payload.get("plate")
+    priority = payload.get("priority", "LOW")
+
+    # Live face watchlist match
+    face_hit = None
+    if alert_type == "FACE" and embedding and best_match is not None:
+        rows = (await db.execute(select(FaceEmbedding).where(FaceEmbedding.is_watchlist == True))).scalars().all()
+        gallery = [(r.id, r.person_name or "unknown", r.embedding or []) for r in rows]
+        face_hit = best_match(embedding, gallery, threshold=0.45)
+        if face_hit:
+            priority = "HIGH"
+            payload["watchlist_hit"] = face_hit
+
     new_alert = Alert(
-        camera_id=alert_data.get("camera_id"),
-        alert_type=alert_data.get("alert_type") or alert_data.get("type"),
-        subtype=alert_data.get("subtype"),
-        confidence=alert_data.get("confidence", 0),
-        bbox=alert_data.get("bbox"),
-        track_id=alert_data.get("track_id"),
+        camera_id=camera_id,
+        alert_type=alert_type,
+        subtype=payload.get("subtype"),
+        confidence=payload.get("confidence", 0),
+        bbox=payload.get("bbox"),
+        track_id=payload.get("track_id"),
         timestamp=datetime.utcnow(),
         status="new",
-        priority=alert_data.get("priority", "LOW"),
-        raw_data=alert_data,
+        priority=priority,
+        raw_data={k: v for k, v in payload.items() if k != "embedding"},
     )
     db.add(new_alert)
     await db.commit()
@@ -236,6 +350,23 @@ async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_
         except Exception:
             pass
 
+    if fusion_engine is not None:
+        try:
+            label = payload.get("subtype") or alert_type or "unknown"
+            if alert_type == "FACE":
+                label = "person"
+            elif alert_type == "ANPR":
+                label = "vehicle"
+            fusion_engine.update(
+                camera_id=camera_id or "unknown",
+                local_track_id=payload.get("track_id") or 0,
+                label=label,
+                embedding=embedding,
+                plate=plate,
+            )
+        except Exception:
+            pass
+
     if ws_manager is not None:
         try:
             await ws_manager.broadcast({
@@ -248,25 +379,15 @@ async def receive_secure_alert(alert_data: dict, db: AsyncSession = Depends(get_
                     "confidence": new_alert.confidence,
                     "priority": new_alert.priority,
                     "status": new_alert.status,
+                    "plate": plate,
+                    "watchlist_hit": face_hit,
                     "timestamp": new_alert.timestamp.isoformat() if new_alert.timestamp else None,
                 },
             })
         except Exception:
             pass
 
-    if fusion_engine is not None:
-        try:
-            fusion_engine.update(
-                camera_id=alert_data.get("camera_id", "unknown"),
-                local_track_id=alert_data.get("track_id") or 0,
-                label=alert_data.get("subtype") or alert_data.get("alert_type") or "unknown",
-                embedding=None,
-                plate=None,
-            )
-        except Exception:
-            pass
-
-    return {"msg": "Alert received", "id": new_alert.id}
+    return {"msg": "Alert received", "id": new_alert.id, "watchlist_hit": face_hit}
 
 
 @app.post("/api/v1/alerts/{alert_id}/action")
@@ -302,11 +423,91 @@ async def add_watchlist(data: dict, current_user: User = Depends(require_roles([
     return {"msg": "added"}
 
 
+@app.get("/api/v1/face-watchlist")
+async def list_face_watchlist(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FaceEmbedding).where(FaceEmbedding.is_watchlist == True))
+    rows = result.scalars().all()
+    return [
+        {"id": r.id, "person_name": r.person_name, "camera_id": r.camera_id, "timestamp": r.timestamp}
+        for r in rows
+    ]
+
+
+@app.post("/api/v1/face-watchlist")
+async def add_face_watchlist(
+    data: dict,
+    current_user: User = Depends(require_roles(["admin", "commander"])),
+    db: AsyncSession = Depends(get_db),
+):
+    emb = data.get("embedding")
+    if not emb or not data.get("person_name"):
+        raise HTTPException(status_code=400, detail="person_name and embedding required")
+    row = FaceEmbedding(
+        person_name=data["person_name"],
+        embedding=emb,
+        camera_id=data.get("camera_id") or "enroll",
+        is_watchlist=True,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return {"msg": "enrolled", "id": row.id}
+
+
+@app.post("/api/v1/face-watchlist/match")
+async def match_face(data: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if best_match is None:
+        raise HTTPException(status_code=501, detail="matcher unavailable")
+    query = data.get("embedding")
+    if not query:
+        raise HTTPException(status_code=400, detail="embedding required")
+    threshold = float(data.get("threshold", 0.45))
+    result = await db.execute(select(FaceEmbedding).where(FaceEmbedding.is_watchlist == True))
+    rows = result.scalars().all()
+    gallery = [(r.id, r.person_name or "unknown", r.embedding or []) for r in rows]
+    hit = best_match(query, gallery, threshold=threshold)
+    return {"match": hit is not None, "result": hit}
+
+
 @app.get("/api/v1/fusion/active")
 async def get_active_global_tracks(current_user: User = Depends(get_current_user)):
     if fusion_engine is None:
         return []
     return fusion_engine.get_active_tracks()
+
+
+@app.post("/api/v1/c2/export")
+async def c2_export(
+    data: dict = None,
+    current_user: User = Depends(require_roles(["admin", "commander"])),
+    db: AsyncSession = Depends(get_db),
+):
+    data = data or {}
+    limit = min(int(data.get("limit", 50)), 200)
+    result = await db.execute(
+        select(Alert).where(Alert.priority.in_(["HIGH", "MEDIUM"])).order_by(Alert.timestamp.desc()).limit(limit)
+    )
+    alerts = result.scalars().all()
+    return {
+        "system": "IBVAP",
+        "organization": "SSB / Police II Division",
+        "schema": "ibvap.c2.v1",
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "events": [
+            {
+                "event_id": a.id,
+                "camera_id": a.camera_id,
+                "type": a.alert_type,
+                "subtype": a.subtype,
+                "priority": a.priority,
+                "status": a.status,
+                "confidence": a.confidence,
+                "timestamp": a.timestamp.isoformat() if a.timestamp else None,
+                "event_hash": a.event_hash,
+            }
+            for a in alerts
+        ],
+    }
 
 
 @app.websocket("/ws/alerts")
@@ -331,11 +532,11 @@ async def health():
     return {
         "status": "ok",
         "service": "IBVAP Central",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "websocket_clients": len(ws_manager.active_connections) if ws_manager else 0,
     }
 
 
 @app.get("/")
 async def root():
-    return {"message": "IBVAP Central API is running", "version": "1.1.0"}
+    return {"message": "IBVAP Central API is running", "version": "1.2.0"}

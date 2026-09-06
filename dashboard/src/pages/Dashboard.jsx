@@ -5,8 +5,7 @@ import { useAlertsWebSocket } from "../hooks/useAlertsWebSocket";
 import { bopFromCamera, frontierFromBop } from "../utils/bop";
 
 export default function Dashboard() {
-  const token = localStorage.getItem("token");
-  const { alerts, connected, refresh } = useAlertsWebSocket(token);
+  const { alerts, connected, refresh } = useAlertsWebSocket();
   const [bopFilter, setBopFilter] = useState("ALL");
   const [sectorFilter, setSectorFilter] = useState("ALL");
 

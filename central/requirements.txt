@@ -10,3 +10,4 @@ python-multipart
 redis
 httpx
 websockets
+cryptography

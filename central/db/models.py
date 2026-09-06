@@ -13,6 +13,7 @@ class User(Base):
     full_name = Column(String(100))
     role = Column(String(30), default="operator")  # admin, commander, operator, patroller
     is_active = Column(Boolean, default=True)
+    must_change_password = Column(Boolean, default=False)
     fcm_token = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)

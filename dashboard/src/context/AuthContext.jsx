@@ -8,16 +8,19 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const savedUser = localStorage.getItem("user");
-    if (token && savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    (async () => {
+      try {
+        const res = await api.get("/me");
+        setUser(res.data);
+      } catch {
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const login = async (username, password) => {
-    // OAuth2PasswordRequestForm expects application/x-www-form-urlencoded
     const params = new URLSearchParams();
     params.append("username", username);
     params.append("password", password);
@@ -26,23 +29,30 @@ export const AuthProvider = ({ children }) => {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
 
-    const { access_token, role, full_name } = res.data;
-    const userData = { username, role, full_name };
-
-    localStorage.setItem("token", access_token);
-    localStorage.setItem("user", JSON.stringify(userData));
+    const userData = {
+      username,
+      role: res.data.role,
+      full_name: res.data.full_name,
+      must_change_password: res.data.must_change_password,
+    };
     setUser(userData);
     return userData;
   };
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+  const changePassword = async (current_password, new_password) => {
+    await api.post("/auth/change-password", { current_password, new_password });
+    setUser((u) => (u ? { ...u, must_change_password: false } : u));
+  };
+
+  const logout = async () => {
+    try {
+      await api.post("/auth/logout");
+    } catch (_) {}
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

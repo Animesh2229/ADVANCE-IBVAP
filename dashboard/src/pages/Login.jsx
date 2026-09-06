@@ -6,9 +6,11 @@ import { Shield } from "lucide-react";
 export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [mustChange, setMustChange] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, changePassword } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -16,10 +18,20 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(username, password);
-      navigate("/");
+      if (mustChange) {
+        await changePassword(password, newPassword);
+        navigate("/");
+        return;
+      }
+      const user = await login(username, password);
+      if (user.must_change_password) {
+        setMustChange(true);
+        setPassword("");
+      } else {
+        navigate("/");
+      }
     } catch (err) {
-      setError("Invalid username or password");
+      setError(err.response?.data?.detail || "Invalid username or password");
     } finally {
       setLoading(false);
     }
@@ -37,18 +49,22 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {!mustChange && (
+            <div>
+              <label className="block text-sm text-slate-300 mb-1">Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
+          )}
           <div>
-            <label className="block text-sm text-slate-300 mb-1">Username</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-300 mb-1">Password</label>
+            <label className="block text-sm text-slate-300 mb-1">
+              {mustChange ? "Current password" : "Password"}
+            </label>
             <input
               type="password"
               value={password}
@@ -57,6 +73,20 @@ export default function Login() {
               required
             />
           </div>
+          {mustChange && (
+            <div>
+              <label className="block text-sm text-slate-300 mb-1">New password (min 8 chars)</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                minLength={8}
+                required
+              />
+              <p className="text-amber-400 text-xs mt-2">First login: set a new admin password.</p>
+            </div>
+          )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
@@ -65,7 +95,7 @@ export default function Login() {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50"
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "Please wait..." : mustChange ? "Update password" : "Sign In"}
           </button>
         </form>
 
