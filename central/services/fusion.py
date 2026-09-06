@@ -3,7 +3,7 @@ Multi-Camera Fusion Service (Strengthened)
 Maintains global tracks across cameras using face embeddings and plates.
 """
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 import uuid
 
@@ -14,8 +14,8 @@ class GlobalTrack:
         self.embeddings: List[List[float]] = []
         self.plates = set()
         self.camera_history = []
-        self.first_seen = datetime.utcnow()
-        self.last_seen = datetime.utcnow()
+        self.first_seen = datetime.now(timezone.utc)
+        self.last_seen = datetime.now(timezone.utc)
         self.is_active = True
 
 class MultiCameraFusion:
@@ -32,7 +32,7 @@ class MultiCameraFusion:
     def update(self, camera_id: str, local_track_id: int, label: str,
                embedding: Optional[List[float]] = None,
                plate: Optional[str] = None):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         matched_gid = None
 
         # Match by face embedding
@@ -81,7 +81,7 @@ class MultiCameraFusion:
         }
 
     def get_active_tracks(self, max_age_seconds=300):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         active = {}
         for gid, gtrack in self.global_tracks.items():
             if (now - gtrack.last_seen).total_seconds() < max_age_seconds:
