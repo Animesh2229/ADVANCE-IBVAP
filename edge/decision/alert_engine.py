@@ -68,7 +68,6 @@ class AlertEngine:
                 "priority": "MEDIUM",
             })
 
-        # Face embeddings must travel to Central for fusion + watchlist match
         for face in result.get("faces", []):
             alerts.append({
                 "type": "FACE",
@@ -82,7 +81,6 @@ class AlertEngine:
                 "priority": "MEDIUM",
             })
 
-        # ANPR plates must travel to Central for fusion + vehicle watchlist
         for plate in result.get("plates", []):
             alerts.append({
                 "type": "ANPR",
@@ -95,6 +93,13 @@ class AlertEngine:
                 "plate": plate.get("plate"),
                 "priority": "MEDIUM",
             })
+
+        snap = result.get("snapshot")
+        if snap:
+            for al in alerts:
+                if al.get("priority") in ("HIGH", "MEDIUM"):
+                    al["snapshot"] = snap
+
         return alerts
 
     def create_secure_alert(self, alert: dict) -> dict:
