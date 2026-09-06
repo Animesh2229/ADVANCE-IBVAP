@@ -43,16 +43,32 @@ try:
 except ImportError:
     ws_manager = None
 
+try:
+    from services.rate_limit import alert_limiter
+except ImportError:
+    alert_limiter = None
+
+try:
+    from services.c2_webhook import push_alert_to_c2
+except ImportError:
+    push_alert_to_c2 = None
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY or len(SECRET_KEY) < 32:
+    if ENVIRONMENT == "production":
+        raise RuntimeError(
+            "SECRET_KEY must be set to a value >= 32 characters when ENVIRONMENT=production. "
+            "Refusing to start with a random key (sessions would invalidate on every restart)."
+        )
     SECRET_KEY = secrets.token_urlsafe(48)
-    print("[WARNING] SECRET_KEY not set or too short. Using temporary key.")
+    print("[WARNING] SECRET_KEY not set or too short. Using temporary key (development only).")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://ibvap:ibvap@localhost/ibvap")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -60,7 +76,7 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
-app = FastAPI(title="IBVAP Central API", version="1.2.0", docs_url="/docs" if ENVIRONMENT == "development" else None)
+app = FastAPI(title="IBVAP Central API", version="1.2.1", docs_url="/docs" if ENVIRONMENT == "development" else None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -311,6 +327,16 @@ async def receive_secure_alert(
     plate = payload.get("plate")
     priority = payload.get("priority", "LOW")
 
+    # Per-camera rate limit (protects Central if an edge key leaks)
+    if alert_limiter is not None and camera_id:
+        allowed, remaining = alert_limiter.allow(str(camera_id))
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded for camera {camera_id}. Retry later.",
+                headers={"Retry-After": "60"},
+            )
+
     # Live face watchlist match
     face_hit = None
     if alert_type == "FACE" and embedding and best_match is not None:
@@ -384,6 +410,13 @@ async def receive_secure_alert(
                     "timestamp": new_alert.timestamp.isoformat() if new_alert.timestamp else None,
                 },
             })
+        except Exception:
+            pass
+
+    # Optional outbound push to external C2 when C2_WEBHOOK_URL is set
+    if push_alert_to_c2 is not None:
+        try:
+            await push_alert_to_c2(new_alert)
         except Exception:
             pass
 
@@ -532,11 +565,13 @@ async def health():
     return {
         "status": "ok",
         "service": "IBVAP Central",
-        "version": "1.2.0",
+        "version": "1.2.1",
         "websocket_clients": len(ws_manager.active_connections) if ws_manager else 0,
+        "c2_webhook_configured": bool(os.getenv("C2_WEBHOOK_URL", "").strip()),
+        "redis_rate_limit": bool(os.getenv("REDIS_URL", "").strip()),
     }
 
 
 @app.get("/")
 async def root():
-    return {"message": "IBVAP Central API is running", "version": "1.2.0"}
+    return {"message": "IBVAP Central API is running", "version": "1.2.1"}
