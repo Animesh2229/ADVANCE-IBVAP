@@ -1,11 +1,35 @@
 """
-Multi-Camera Fusion Service (Strengthened)
+Multi-Camera Fusion Service
+
 Maintains global tracks across cameras using face embeddings and plates.
+
+Persistence:
+- Default: in-memory
+- If FUSION_STATE_PATH is set: periodic JSON snapshot
+- If REDIS_URL is set: mirror active track metadata in Redis
 """
-import numpy as np
+from __future__ import annotations
+
+import json
+import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
-import uuid
+
+import numpy as np
+
+FUSION_STATE_PATH = os.getenv("FUSION_STATE_PATH", "").strip()
+_REDIS_URL = os.getenv("REDIS_URL", "").strip()
+_redis = None
+if _REDIS_URL:
+    try:
+        import redis  # type: ignore
+        _redis = redis.Redis.from_url(_REDIS_URL, decode_responses=True)
+        _redis.ping()
+    except Exception as exc:  # pragma: no cover
+        print(f"[fusion] Redis unavailable ({exc}); memory-only")
+        _redis = None
+
 
 class GlobalTrack:
     def __init__(self, global_id: str, label: str):
@@ -18,11 +42,13 @@ class GlobalTrack:
         self.last_seen = datetime.now(timezone.utc)
         self.is_active = True
 
+
 class MultiCameraFusion:
     def __init__(self, max_time_gap_seconds=180, face_threshold=0.48):
         self.global_tracks: Dict[str, GlobalTrack] = {}
         self.max_time_gap = timedelta(seconds=max_time_gap_seconds)
         self.face_threshold = face_threshold
+        self._load_state()
 
     def _cosine_sim(self, a, b):
         a = np.array(a, dtype=np.float32)
@@ -35,7 +61,6 @@ class MultiCameraFusion:
         now = datetime.now(timezone.utc)
         matched_gid = None
 
-        # Match by face embedding
         if embedding is not None:
             best_sim = -1.0
             for gid, gtrack in self.global_tracks.items():
@@ -49,14 +74,12 @@ class MultiCameraFusion:
                         best_sim = sim
                         matched_gid = gid if best_sim >= (1 - self.face_threshold) else matched_gid
 
-        # Match by plate
         if matched_gid is None and plate:
             for gid, gtrack in self.global_tracks.items():
                 if plate in gtrack.plates and (now - gtrack.last_seen) < self.max_time_gap:
                     matched_gid = gid
                     break
 
-        # Create new global track
         if matched_gid is None:
             matched_gid = str(uuid.uuid4())[:8]
             self.global_tracks[matched_gid] = GlobalTrack(matched_gid, label)
@@ -64,6 +87,8 @@ class MultiCameraFusion:
         gtrack = self.global_tracks[matched_gid]
         gtrack.last_seen = now
         gtrack.camera_history.append((camera_id, now.isoformat(), local_track_id))
+        if len(gtrack.camera_history) > 50:
+            gtrack.camera_history = gtrack.camera_history[-50:]
         if embedding is not None:
             gtrack.embeddings.append(embedding)
             if len(gtrack.embeddings) > 15:
@@ -71,13 +96,14 @@ class MultiCameraFusion:
         if plate:
             gtrack.plates.add(plate)
 
+        self._persist_soft()
         return {
             "global_id": matched_gid,
             "label": label,
             "cameras_seen": list(set([c[0] for c in gtrack.camera_history])),
             "plates": list(gtrack.plates),
             "first_seen": gtrack.first_seen.isoformat(),
-            "last_seen": gtrack.last_seen.isoformat()
+            "last_seen": gtrack.last_seen.isoformat(),
         }
 
     def get_active_tracks(self, max_age_seconds=300):
@@ -90,9 +116,55 @@ class MultiCameraFusion:
                     "label": gtrack.label,
                     "plates": list(gtrack.plates),
                     "cameras": list(set([c[0] for c in gtrack.camera_history[-10:]])),
-                    "last_seen": gtrack.last_seen.isoformat()
+                    "last_seen": gtrack.last_seen.isoformat(),
                 }
         return active
 
-# Global instance
+    def _persist_soft(self):
+        try:
+            if FUSION_STATE_PATH:
+                data = {}
+                for gid, gt in self.global_tracks.items():
+                    data[gid] = {
+                        "label": gt.label,
+                        "plates": list(gt.plates),
+                        "embeddings": gt.embeddings[-5:],
+                        "camera_history": gt.camera_history[-20:],
+                        "first_seen": gt.first_seen.isoformat(),
+                        "last_seen": gt.last_seen.isoformat(),
+                    }
+                tmp = FUSION_STATE_PATH + ".tmp"
+                os.makedirs(os.path.dirname(FUSION_STATE_PATH) or ".", exist_ok=True)
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+                os.replace(tmp, FUSION_STATE_PATH)
+            if _redis is not None:
+                active = self.get_active_tracks()
+                _redis.setex("ibvap:fusion:active", 300, json.dumps(active))
+        except Exception as exc:  # pragma: no cover
+            print(f"[fusion] persist skipped: {exc}")
+
+    def _load_state(self):
+        if not FUSION_STATE_PATH or not os.path.isfile(FUSION_STATE_PATH):
+            return
+        try:
+            with open(FUSION_STATE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for gid, row in data.items():
+                gt = GlobalTrack(gid, row.get("label", "unknown"))
+                gt.plates = set(row.get("plates") or [])
+                gt.embeddings = row.get("embeddings") or []
+                gt.camera_history = row.get("camera_history") or []
+                for field, attr in (("first_seen", "first_seen"), ("last_seen", "last_seen")):
+                    if row.get(field):
+                        try:
+                            setattr(gt, attr, datetime.fromisoformat(row[field]))
+                        except Exception:
+                            pass
+                self.global_tracks[gid] = gt
+            print(f"[fusion] restored {len(self.global_tracks)} tracks from {FUSION_STATE_PATH}")
+        except Exception as exc:  # pragma: no cover
+            print(f"[fusion] load failed: {exc}")
+
+
 fusion_engine = MultiCameraFusion()
