@@ -7,7 +7,7 @@ python-jose[cryptography]
 passlib[bcrypt]
 pydantic>=2.0
 python-multipart
-redis
+# redis  # optional: only needed if REDIS_URL is set for shared rate-limits
 httpx
 websockets
 cryptography
