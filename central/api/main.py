@@ -18,9 +18,10 @@ import secrets
 from db.models import Base, User, Alert, VehicleWatchlist, ImmutableEvent, FaceEmbedding
 
 try:
-    from services.chain import append_event
+    from services.chain import append_event, verify_chain
 except ImportError:
     append_event = None
+    verify_chain = None
 
 try:
     from services.fusion import fusion_engine
@@ -76,7 +77,7 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
-app = FastAPI(title="IBVAP Central API", version="1.2.1", docs_url="/docs" if ENVIRONMENT == "development" else None)
+app = FastAPI(title="IBVAP Central API", version="1.3.0", docs_url="/docs" if ENVIRONMENT == "development" else None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -176,6 +177,11 @@ def require_roles(roles: List[str]):
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    if ws_manager is not None and hasattr(ws_manager, "start_redis_subscriber"):
+        try:
+            await ws_manager.start_redis_subscriber()
+        except Exception as exc:
+            print(f"[startup] WS Redis bridge: {exc}")
 
 
 @app.post("/api/v1/auth/login")
@@ -327,7 +333,6 @@ async def receive_secure_alert(
     plate = payload.get("plate")
     priority = payload.get("priority", "LOW")
 
-    # Per-camera rate limit (protects Central if an edge key leaks)
     if alert_limiter is not None and camera_id:
         allowed, remaining = alert_limiter.allow(str(camera_id))
         if not allowed:
@@ -337,7 +342,6 @@ async def receive_secure_alert(
                 headers={"Retry-After": "60"},
             )
 
-    # Live face watchlist match
     face_hit = None
     if alert_type == "FACE" and embedding and best_match is not None:
         rows = (await db.execute(select(FaceEmbedding).where(FaceEmbedding.is_watchlist == True))).scalars().all()
@@ -413,7 +417,6 @@ async def receive_secure_alert(
         except Exception:
             pass
 
-    # Optional outbound push to external C2 when C2_WEBHOOK_URL is set
     if push_alert_to_c2 is not None:
         try:
             await push_alert_to_c2(new_alert)
@@ -560,12 +563,20 @@ async def websocket_alerts(websocket: WebSocket):
         await ws_manager.disconnect(websocket)
 
 
+@app.get("/api/v1/chain/verify")
+async def chain_verify(current_user: User = Depends(require_roles(["admin", "commander"])), db: AsyncSession = Depends(get_db)):
+    """Verify integrity of the immutable hash-linked event log."""
+    if verify_chain is None:
+        raise HTTPException(status_code=501, detail="chain module unavailable")
+    return await verify_chain(db)
+
+
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
         "service": "IBVAP Central",
-        "version": "1.2.1",
+        "version": "1.3.0",
         "websocket_clients": len(ws_manager.active_connections) if ws_manager else 0,
         "c2_webhook_configured": bool(os.getenv("C2_WEBHOOK_URL", "").strip()),
         "redis_rate_limit": bool(os.getenv("REDIS_URL", "").strip()),
@@ -574,4 +585,4 @@ async def health():
 
 @app.get("/")
 async def root():
-    return {"message": "IBVAP Central API is running", "version": "1.2.1"}
+    return {"message": "IBVAP Central API is running", "version": "1.3.0"}
