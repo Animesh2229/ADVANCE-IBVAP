@@ -28,6 +28,8 @@ cp .env.example .env
 
 `EDGE_FERNET_KEY` and `EDGE_HMAC_SECRET` **must be identical** on Central and every Edge device. Edge will not start without them. Central rejects unsigned / undecryptable alerts.
 
+When `ENVIRONMENT=production`, `SECRET_KEY` (>=32 chars) is **required** — Central will not start with a random key.
+
 ### 3. Download AI Models (first time)
 ```bash
 cd scripts
@@ -73,7 +75,7 @@ npx expo start
 
 ---
 
-## Features (v1.2)
+## Features (v1.2.1)
 
 - Human & Vehicle Detection + Tracking (YOLOv11, graceful fallback if missing)
 - Face detection **and embeddings sent to Central** (fusion + watchlist match)
@@ -81,9 +83,11 @@ npx expo start
 - Virtual Fence + Night Enhancement
 - Real-time Alerts via WebSocket (+ polling fallback)
 - HMAC + Fernet on `/api/v1/alerts/secure` (no anonymous inject)
+- **Per-camera rate limiting** on secure ingest (optional Redis via `REDIS_URL`)
 - Role-based Access Control, httpOnly JWT cookie
 - Vehicle + Face watchlist
 - Multi-camera Fusion (face + plate)
+- C2 pull export **and** outbound webhook (`C2_WEBHOOK_URL`)
 - Field Mobile App
 - Offline alert queue
 - Immutable hash-chain audit log
@@ -94,10 +98,26 @@ npx expo start
 ## Security Notes
 
 - `EDGE_FERNET_KEY` + `EDGE_HMAC_SECRET` required. Central **decrypts** `encrypted_payload` and **ignores** plaintext sidecar fields.
-- `/api/v1/alerts/secure` rejects missing/invalid HMAC (5-minute skew).
+- `/api/v1/alerts/secure` rejects missing/invalid HMAC (5-minute skew) and rate-limits per `camera_id`.
 - JWT in httpOnly cookie; Bearer still accepted for Field App.
 - First admin login must change password.
+- Production mode hard-fails without `SECRET_KEY`.
 - Never commit `.env`.
+
+---
+
+## Status & honesty note
+
+This repository is a **working reference implementation** for Problem Statement 26187 (SSB / Police II).  
+Security basics (HMAC+Fernet alerts, httpOnly JWT, forced password change, per-camera rate limits) are implemented and unit-tested.
+
+**It is still a prototype-grade system** relative to a full production border deployment:
+
+- Fusion / WebSocket state is **in-memory** (optional Redis only for rate limits when `REDIS_URL` is set).
+- Face/ANPR accuracy depends on model choice, camera placement, and field calibration.
+- Before live border use: independent security audit, load test at target BOP scale, and integration UAT with the actual C2 system.
+
+Do **not** treat an un-audited clone as production-ready for operational border control.
 
 ---
 
