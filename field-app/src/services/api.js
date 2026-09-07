@@ -1,11 +1,13 @@
 import axios from 'axios';
 
-// Change this to your Central server IP when testing on device
-const BASE_URL = 'http://YOUR_CENTRAL_IP:8000/api/v1';
+// Use HTTPS in production. Override with EXPO_PUBLIC_API_URL.
+const BASE_URL =
+  (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) ||
+  'https://YOUR_CENTRAL_HOST/api/v1';
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 10000,
+  timeout: 15000,
 });
 
 export default api;

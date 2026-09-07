@@ -1,8 +1,24 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import api from '../services/api';
 
 const AuthContext = createContext(null);
+const TOKEN_KEY = 'ibvap_token';
+const USER_KEY = 'ibvap_user';
+
+async function saveSecure(key, value) {
+  await SecureStore.setItemAsync(key, value);
+}
+
+async function loadSecure(key) {
+  return SecureStore.getItemAsync(key);
+}
+
+async function deleteSecure(key) {
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch (_) {}
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -14,8 +30,8 @@ export function AuthProvider({ children }) {
 
   const loadUser = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      const userData = await AsyncStorage.getItem('user');
+      const token = await loadSecure(TOKEN_KEY);
+      const userData = await loadSecure(USER_KEY);
       if (token && userData) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         setUser(JSON.parse(userData));
@@ -34,17 +50,18 @@ export function AuthProvider({ children }) {
     const res = await api.post('/auth/login', form.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
-    const { access_token, role, full_name } = res.data;
-    const userObj = { username, role, full_name };
-    await AsyncStorage.setItem('token', access_token);
-    await AsyncStorage.setItem('user', JSON.stringify(userObj));
+    const { access_token, role, full_name, must_change_password } = res.data;
+    const userObj = { username, role, full_name, must_change_password };
+    await saveSecure(TOKEN_KEY, access_token);
+    await saveSecure(USER_KEY, JSON.stringify(userObj));
     api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
     setUser(userObj);
     return userObj;
   };
 
   const logout = async () => {
-    await AsyncStorage.multiRemove(['token', 'user']);
+    await deleteSecure(TOKEN_KEY);
+    await deleteSecure(USER_KEY);
     delete api.defaults.headers.common['Authorization'];
     setUser(null);
   };
