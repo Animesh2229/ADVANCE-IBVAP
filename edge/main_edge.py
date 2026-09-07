@@ -80,55 +80,37 @@ def main():
     pipeline = EdgeAIPipeline(config)
     alerter = AlertEngine(central_url=config.get("central", {}).get("url"))
 
-    fence_points = None
-    if config.get("virtual_fence", {}).get("enabled"):
-        fence_points = config["virtual_fence"].get("points")
-
     streams = open_cameras(cam_list)
     if not streams:
-        print("ERROR: No camera could be opened. Check config / devices / RTSP.")
+        print("[FATAL] No cameras opened")
         return
 
-    print(f"[IBVAP] Running {len(streams)} camera(s). Press 'q' to quit.")
+    fence_cfg = config.get("virtual_fence", {})
+    fence_points = fence_cfg.get("points") if fence_cfg.get("enabled", True) else None
 
-    while True:
+    print("[IBVAP] Running… Ctrl+C to stop")
+    try:
+        while True:
+            for stream in streams:
+                ret, frame = stream["cap"].read()
+                if not ret or frame is None:
+                    continue
+                try:
+                    result = pipeline.process(frame, stream["camera_id"], virtual_fence_points=fence_points)
+                    alerts = alerter.evaluate_from_pipeline(result)
+                    for alert in alerts:
+                        print(f"[ALERT] {stream['camera_id']} | {alert['type']} | {alert.get('subtype')} | {alert.get('confidence', 0):.2f}")
+                        secure = alerter.create_secure_alert(alert)
+                        alerter.send_to_central(secure)
+                except Exception as frame_err:
+                    print(f"[ERROR] {stream['camera_id']} frame failed: {frame_err}")
+                    continue
+            time.sleep(0.03)
+    except KeyboardInterrupt:
+        print("\n[IBVAP] Stopped")
+    finally:
         for stream in streams:
-            ret, frame = stream["cap"].read()
-            if not ret:
-                stream["cap"].release()
-                stream["cap"] = cv2.VideoCapture(stream["source"])
-                continue
-
-            result = pipeline.process(frame, stream["camera_id"], virtual_fence_points=fence_points)
-            alerts = alerter.evaluate_from_pipeline(result)
-
-            for alert in alerts:
-                print(f"[ALERT] {stream['camera_id']} | {alert['type']} | {alert.get('subtype')} | {alert['confidence']:.2f}")
-                secure = alerter.create_secure_alert(alert)
-                alerter.send_to_central(secure)
-
-            if stream is streams[0]:
-                vis = frame.copy()
-                for obj in result.get("tracked_objects", []):
-                    x1, y1, x2, y2 = map(int, obj["bbox"])
-                    color = (0, 255, 0) if obj["label"] == "person" else (0, 165, 255)
-                    cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
-                    cv2.putText(vis, f"ID:{obj['track_id']} {obj['label']}", (x1, y1 - 8),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
-                if fence_points:
-                    pts = np.array(fence_points, np.int32).reshape((-1, 1, 2))
-                    cv2.polylines(vis, [pts], True, (0, 0, 255), 2)
-                cv2.putText(vis, f"{bop_id} | cams:{len(streams)}", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                cv2.imshow(f"IBVAP Edge [{bop_id}]", vis)
-
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-    for s in streams:
-        s["cap"].release()
-    cv2.destroyAllWindows()
-    print("[IBVAP] Edge stopped.")
+            stream["cap"].release()
 
 
 if __name__ == "__main__":
