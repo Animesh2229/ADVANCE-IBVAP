@@ -3,13 +3,14 @@ Edge Alert Engine
 - Builds alerts from pipeline (detections, fence, suspicious, FACE, ANPR)
 - Fernet-encrypts the full alert (including embedding / plate)
 - HMAC-signs the ciphertext
-- Offline disk queue when Central is unreachable
+- Offline disk queue when Central is unreachable (UUID filenames — no overwrite)
 """
 from __future__ import annotations
 
 import json
 import os
 import time
+import uuid
 from pathlib import Path
 
 import requests
@@ -125,8 +126,9 @@ class AlertEngine:
         files = sorted(self.queue_dir.glob("*.json"))
         if len(files) >= self.max_queue:
             files[0].unlink(missing_ok=True)
-        name = f"{int(time.time() * 1000)}_{secure_alert.get('camera_id', 'cam')}.json"
-        path = self.queue_dir / name.replace("/", "_")
+        cam = str(secure_alert.get("camera_id", "cam")).replace("/", "_")
+        name = f"{int(time.time() * 1000)}_{cam}_{uuid.uuid4().hex[:10]}.json"
+        path = self.queue_dir / name
         path.write_text(json.dumps(secure_alert))
         print(f"[Offline Queue] Saved ({len(list(self.queue_dir.glob('*.json')))} pending)")
 
