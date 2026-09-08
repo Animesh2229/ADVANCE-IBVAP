@@ -1,0 +1,29 @@
+# Indicative BOM / cost model per BOP (tune with real quotes)
+# Currency: INR
+
+bop_id_example: "BOP-001"
+cameras_per_bop: 8
+
+edge_compute:
+  item: "Industrial mini-PC / Jetson-class (example)"
+  unit_cost_inr: 45000
+  power_watts: 25
+
+network:
+  item: "4G/VPN router"
+  unit_cost_inr: 8000
+  monthly_data_inr: 500
+
+power:
+  item: "UPS / solar assist (optional)"
+  unit_cost_inr: 15000
+
+central_share:
+  server_cost_inr: 150000
+  assumed_bops: 50
+  per_bop_share_inr: 3000
+
+totals_indicative_inr:
+  capex_per_bop_reuse_cctv: 68000
+  opex_monthly_per_bop: 500
+  note: "Replace with real quotations before board presentation"
