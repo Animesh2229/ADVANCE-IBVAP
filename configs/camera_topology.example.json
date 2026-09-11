@@ -1,0 +1,10 @@
+{
+  "_comment": "Map each camera_id to physically adjacent cameras for cross-camera Re-ID spatiotemporal gate. Configure per BOP layout.",
+  "BOP-0001-CAM-01": ["BOP-0001-CAM-02", "BOP-0001-CAM-03"],
+  "BOP-0001-CAM-02": ["BOP-0001-CAM-01", "BOP-0001-CAM-03"],
+  "BOP-0001-CAM-03": ["BOP-0001-CAM-01", "BOP-0001-CAM-02"],
+  "BOP-RANIKHET-01": ["BOP-RANIKHET-02"],
+  "BOP-RANIKHET-02": ["BOP-RANIKHET-01", "BOP-RANIKHET-03"],
+  "BOP-SILIGURI-01": ["BOP-SILIGURI-02"],
+  "BOP-SILIGURI-02": ["BOP-SILIGURI-01"]
+}
