@@ -33,8 +33,13 @@ jobs:
           python-version: "3.11"
       - name: Install minimal edge deps
         run: |
+          # Minimal set matching CI intent — scipy optional (tracker has pure-Python fallback)
           pip install numpy pytest cryptography requests
       - name: Run edge smoke tests
+        env:
+          # Tests set their own keys; provide defaults so import never fails
+          EDGE_FERNET_KEY: "dGVzdC1mZXJuZXQta2V5LWZvci1jaS1vbmx5LTEyMzQ1Njc4OTA="
+          EDGE_HMAC_SECRET: "ci-hmac-secret-for-tests-only"
         run: |
           cd edge
           PYTHONPATH=. pytest tests/ -v --tb=short
@@ -47,8 +52,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
       - name: Install & Build Dashboard
         run: |
           cd dashboard
-          npm install
+          npm ci || npm install
           npm run build
