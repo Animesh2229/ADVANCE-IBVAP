@@ -49,8 +49,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          # No package-lock.json in repo — do not use npm cache path that requires it
+          node-version: "22"
       - name: Install & Build Dashboard
         working-directory: dashboard
         run: |
