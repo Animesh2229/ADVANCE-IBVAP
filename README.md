@@ -29,9 +29,24 @@ When `ENVIRONMENT=production`, `SECRET_KEY` (>=32 chars) is **required**.
 ### 3–7
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Central, Dashboard, Edge, Field App, Redis, VPN, and scale notes.
 
----
+## Windows (no Docker)
+See [docs/WINDOWS_RUN.md](docs/WINDOWS_RUN.md). Use `venv\Scripts\activate` (not Linux `source`).
 
-## Features (v1.3.0)
+Dashboard install if peer conflict:
+```bash
+cd dashboard && npm install --legacy-peer-deps && npm run dev
+```
+
+## Jury / screening pack
+- [docs/JURY_CHECKLIST.md](docs/JURY_CHECKLIST.md)
+- [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)
+- [docs/EVAL_REPORT_TEMPLATE.md](docs/EVAL_REPORT_TEMPLATE.md)
+```bash
+python scripts/eval_metrics.py --gallery-size 500
+python scripts/export_onnx_trt.py --trt-notes
+```
+
+## Features (v1.3.0+)
 
 - Human & Vehicle Detection + Tracking (YOLOv11 + **SORT-style Kalman/IoU tracker**)
 - Face detection and embeddings to Central (vectorized match + optional FAISS)
@@ -47,6 +62,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Central, Dashboard, Edge, Field
 - Offline alert queue
 - Immutable hash-chain audit log + `/api/v1/chain/verify`
 - CI with real tests; `scripts/eval_metrics.py` micro-benchmarks
+- i18n: English, Hindi, Nepali, Dzongkha
 
 ---
 
@@ -64,9 +80,9 @@ Working reference implementation for PS 26187. Security basics and unit tests ar
 
 Still prototype-grade vs full operational border deploy:
 
-- Fusion can snapshot to `FUSION_STATE_PATH`; WebSocket fanout uses Redis when `REDIS_URL` is set
 - Field mAP / face TPR / ANPR accuracy need labeled evaluation before operational claims
 - Independent security audit + load test at target BOP scale recommended
+- Pilot: single machine; scale: same software, shared/sector compute
 
 ---
 
@@ -80,4 +96,6 @@ python scripts/eval_metrics.py --gallery-size 500
 ## Documentation
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deployment](docs/DEPLOYMENT.md)
+- [Windows run](docs/WINDOWS_RUN.md)
 - [C2 integration](docs/C2_INTEGRATION.md)
+- [Jury checklist](docs/JURY_CHECKLIST.md)
