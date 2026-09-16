@@ -1,12 +1,13 @@
 """
 Multi-Camera Fusion Service
 
-Maintains global tracks across cameras using face embeddings and plates.
+Maintains global tracks across cameras using face embeddings, plates,
+and optional appearance vectors (e.g. color histogram from edge).
 
-Persistence:
-- Default: in-memory
-- If FUSION_STATE_PATH is set: periodic JSON snapshot
-- If REDIS_URL is set: mirror active track metadata in Redis
+Match policy (jury-facing):
+  same global_id if (face cosine high OR plate match OR appearance cosine high)
+  AND within max_time_gap_seconds
+  AND same label
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ _redis = None
 if _REDIS_URL:
     try:
         import redis  # type: ignore
+
         _redis = redis.Redis.from_url(_REDIS_URL, decode_responses=True)
         _redis.ping()
     except Exception as exc:  # pragma: no cover
@@ -36,6 +38,7 @@ class GlobalTrack:
         self.global_id = global_id
         self.label = label
         self.embeddings: List[List[float]] = []
+        self.appearance: List[List[float]] = []
         self.plates = set()
         self.camera_history = []
         self.first_seen = datetime.now(timezone.utc)
@@ -44,10 +47,18 @@ class GlobalTrack:
 
 
 class MultiCameraFusion:
-    def __init__(self, max_time_gap_seconds=180, face_threshold=0.48):
+    def __init__(
+        self,
+        max_time_gap_seconds: int = 180,
+        face_threshold: float = 0.48,
+        appearance_threshold: float = 0.85,
+        strict_time_seconds: int = 5,
+    ):
         self.global_tracks: Dict[str, GlobalTrack] = {}
         self.max_time_gap = timedelta(seconds=max_time_gap_seconds)
+        self.strict_time = timedelta(seconds=strict_time_seconds)
         self.face_threshold = face_threshold
+        self.appearance_threshold = appearance_threshold
         self._load_state()
 
     def _cosine_sim(self, a, b):
@@ -55,14 +66,21 @@ class MultiCameraFusion:
         b = np.array(b, dtype=np.float32)
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
 
-    def update(self, camera_id: str, local_track_id: int, label: str,
-               embedding: Optional[List[float]] = None,
-               plate: Optional[str] = None):
+    def update(
+        self,
+        camera_id: str,
+        local_track_id: int,
+        label: str,
+        embedding: Optional[List[float]] = None,
+        plate: Optional[str] = None,
+        appearance: Optional[List[float]] = None,
+    ):
         now = datetime.now(timezone.utc)
         matched_gid = None
+        best_sim = -1.0
 
         if embedding is not None:
-            best_sim = -1.0
+            face_min = 1.0 - self.face_threshold
             for gid, gtrack in self.global_tracks.items():
                 if not gtrack.is_active or gtrack.label != label:
                     continue
@@ -72,7 +90,22 @@ class MultiCameraFusion:
                     sim = self._cosine_sim(embedding, emb)
                     if sim > best_sim:
                         best_sim = sim
-                        matched_gid = gid if best_sim >= (1 - self.face_threshold) else matched_gid
+                        if sim >= face_min:
+                            matched_gid = gid
+
+        if matched_gid is None and appearance is not None:
+            for gid, gtrack in self.global_tracks.items():
+                if not gtrack.is_active or gtrack.label != label:
+                    continue
+                if (now - gtrack.last_seen) > self.strict_time:
+                    continue
+                for app in gtrack.appearance[-5:]:
+                    sim = self._cosine_sim(appearance, app)
+                    if sim >= self.appearance_threshold:
+                        matched_gid = gid
+                        break
+                if matched_gid:
+                    break
 
         if matched_gid is None and plate:
             for gid, gtrack in self.global_tracks.items():
@@ -93,6 +126,10 @@ class MultiCameraFusion:
             gtrack.embeddings.append(embedding)
             if len(gtrack.embeddings) > 15:
                 gtrack.embeddings.pop(0)
+        if appearance is not None:
+            gtrack.appearance.append(appearance)
+            if len(gtrack.appearance) > 15:
+                gtrack.appearance.pop(0)
         if plate:
             gtrack.plates.add(plate)
 
@@ -104,6 +141,7 @@ class MultiCameraFusion:
             "plates": list(gtrack.plates),
             "first_seen": gtrack.first_seen.isoformat(),
             "last_seen": gtrack.last_seen.isoformat(),
+            "match_score": round(best_sim, 4) if best_sim >= 0 else None,
         }
 
     def get_active_tracks(self, max_age_seconds=300):
@@ -129,6 +167,7 @@ class MultiCameraFusion:
                         "label": gt.label,
                         "plates": list(gt.plates),
                         "embeddings": gt.embeddings[-5:],
+                        "appearance": gt.appearance[-5:],
                         "camera_history": gt.camera_history[-20:],
                         "first_seen": gt.first_seen.isoformat(),
                         "last_seen": gt.last_seen.isoformat(),
@@ -154,6 +193,7 @@ class MultiCameraFusion:
                 gt = GlobalTrack(gid, row.get("label", "unknown"))
                 gt.plates = set(row.get("plates") or [])
                 gt.embeddings = row.get("embeddings") or []
+                gt.appearance = row.get("appearance") or []
                 gt.camera_history = row.get("camera_history") or []
                 for field, attr in (("first_seen", "first_seen"), ("last_seen", "last_seen")):
                     if row.get(field):
