@@ -1,26 +1,39 @@
+"""Create default admin user. Run from central/ with venv active and DATABASE_URL set."""
 import asyncio
 import os
 import sys
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select
+
 from passlib.context import CryptContext
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from db.models import Base, User
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://ibvap:ibvap@localhost/ibvap")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://ibvap:ibvap@localhost:5432/ibvap",
+)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin@123")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@ibvap.local")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 async def create_admin():
-    engine = create_async_engine(DATABASE_URL, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        engine = create_async_engine(DATABASE_URL, echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as exc:
+        print("ERROR: Cannot connect to database.")
+        print(f"  DATABASE_URL={DATABASE_URL}")
+        print(f"  Detail: {exc}")
+        print("Fix: Start PostgreSQL, create user/db ibvap, then retry.")
+        raise SystemExit(1)
 
     AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with AsyncSessionLocal() as db:
@@ -37,10 +50,13 @@ async def create_admin():
             db.add(admin)
             await db.commit()
             print(f"Admin user created → username: {ADMIN_USERNAME}")
+            print("Password: ADMIN_PASSWORD from env, or default Admin@123")
             print("IMPORTANT: Change the default password immediately in production!")
         else:
-            print("Admin already exists")
+            print(f"Admin already exists → username: {ADMIN_USERNAME}")
+            print("If login fails, check ADMIN_PASSWORD in .env or recreate user.")
     await engine.dispose()
+
 
 if __name__ == "__main__":
     asyncio.run(create_admin())
