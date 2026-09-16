@@ -21,6 +21,7 @@ from .face_engine import FaceEngine           # Face detect + embedding nikalta 
 from .anpr_engine import ANPREngine           # Number plate padhta hai
 from .intrusion import VirtualFence           # Virtual boundary check karta hai
 from .night import NightEnhancer              # Raat ke time image clear karta hai
+from .appearance import extract_color_histogram  # Clothing color hist for cross-camera Re-ID
 
 
 class EdgeAIPipeline:
@@ -88,6 +89,13 @@ class EdgeAIPipeline:
         # Step 3: Detected objects ko track karo (ID assign + movement track)
         tracked_objects = self.tracker.update(detections, enhanced_frame)
 
+        # Attach lightweight appearance (color histogram) for cross-camera Re-ID
+        for obj in tracked_objects:
+            if obj.get("label") == "person" and obj.get("confidence", 0) > 0.55:
+                hist = extract_color_histogram(enhanced_frame, obj.get("bbox"))
+                if hist:
+                    obj["color_histogram"] = hist
+
         # Step 4: Sirf persons pe face detection chalao
         faces = []
         for obj in tracked_objects:
@@ -111,13 +119,11 @@ class EdgeAIPipeline:
         if virtual_fence_points:
             intrusions = self.fence.check(tracked_objects, virtual_fence_points)
 
-        # Step 7: Suspicious activity check (jaise bahut tezi se bhagna)
+        # Step 7: Suspicious activity check
         suspicious = self._detect_suspicious(tracked_objects)
 
-        # Kitna time laga (milliseconds mein)
         inference_time = (time.time() - start) * 1000
 
-        # Final result package
         return {
             "camera_id": camera_id,
             "frame_id": self.frame_count,
@@ -133,18 +139,44 @@ class EdgeAIPipeline:
 
     def _detect_suspicious(self, tracked_objects: List[Dict]) -> List[Dict]:
         """
-        Simple rule-based suspicious activity detector.
-        Abhi sirf "bahut tez chalna" check karta hai.
-        Baad mein aur rules add kiye ja sakte hain.
+        Behavior-aware suspicious activity detector (jury-critical upgrade).
+        - CRAWLING / CROUCHING: aspect ratio stays flat for several frames
+        - SUSPICIOUS_LOITERING: very low pixel velocity
+        - FAST_MOVEMENT: high speed
         """
         suspicious = []
         for obj in tracked_objects:
-            # Agar person 25 se zyada speed se move kar raha hai
-            if obj["label"] == "person" and obj.get("speed", 0) > 25:
+            if obj.get("label") != "person":
+                continue
+
+            if obj.get("is_crawling"):
+                suspicious.append({
+                    "type": "CRAWLING",
+                    "track_id": obj["track_id"],
+                    "label": "person",
+                    "confidence": 0.82,
+                    "aspect_ratio": obj.get("aspect_ratio"),
+                    "priority_hint": "HIGH",
+                })
+                continue
+
+            if obj.get("is_slow_loitering"):
+                suspicious.append({
+                    "type": "SUSPICIOUS_LOITERING",
+                    "track_id": obj["track_id"],
+                    "label": "person",
+                    "confidence": 0.78,
+                    "speed": obj.get("speed"),
+                    "priority_hint": "MEDIUM",
+                })
+                continue
+
+            if obj.get("speed", 0) > 25:
                 suspicious.append({
                     "type": "FAST_MOVEMENT",
                     "track_id": obj["track_id"],
-                    "label": obj["label"],
-                    "confidence": 0.7
+                    "label": "person",
+                    "confidence": 0.7,
+                    "speed": obj.get("speed"),
                 })
         return suspicious

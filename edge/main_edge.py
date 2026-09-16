@@ -101,7 +101,7 @@ def main():
                     for alert in alerts:
                         print(f"[ALERT] {stream['camera_id']} | {alert['type']} | {alert.get('subtype')} | {alert.get('confidence', 0):.2f}")
                         secure = alerter.create_secure_alert(alert)
-                        alerter.send_to_central(secure)
+                        alerter.send_to_central(secure, original_alert=alert)
                 except Exception as frame_err:
                     print(f"[ERROR] {stream['camera_id']} frame failed: {frame_err}")
                     continue

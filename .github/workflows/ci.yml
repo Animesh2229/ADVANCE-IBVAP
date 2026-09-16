@@ -2,7 +2,7 @@ name: IBVAP CI
 
 on:
   push:
-    branches: [main, master, v1.1-improved]
+    branches: [main, master, v1.1-improved, "defense/**"]
   pull_request:
     branches: [main, master]
 
@@ -35,6 +35,9 @@ jobs:
         run: |
           pip install numpy pytest cryptography requests
       - name: Run edge smoke tests
+        env:
+          EDGE_FERNET_KEY: "dGVzdC1mZXJuZXQta2V5LWZvci1jaS1vbmx5LTEyMzQ1Njc4OTA="
+          EDGE_HMAC_SECRET: "ci-hmac-secret-for-tests-only"
         run: |
           cd edge
           PYTHONPATH=. pytest tests/ -v --tb=short
@@ -46,9 +49,9 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Install & Build Dashboard
+        working-directory: dashboard
         run: |
-          cd dashboard
-          npm install
+          npm install --legacy-peer-deps
           npm run build

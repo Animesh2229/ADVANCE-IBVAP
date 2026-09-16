@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Shield } from "lucide-react";
+import { useLanguage } from "../context/LanguageContext";
+import { Shield, Globe } from "lucide-react";
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -11,6 +12,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { login, changePassword } = useAuth();
+  const { lang, setLang, t, languageNames, available } = useLanguage();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -31,7 +33,7 @@ export default function Login() {
         navigate("/");
       }
     } catch (err) {
-      setError(err.response?.data?.detail || "Invalid username or password");
+      setError(err.response?.data?.detail || t("invalidCredentials"));
     } finally {
       setLoading(false);
     }
@@ -40,18 +42,33 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl p-8 w-full max-w-md shadow-2xl">
+        <div className="flex justify-end mb-2">
+          <div className="flex items-center gap-1">
+            <Globe size={14} className="text-slate-400" />
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value)}
+              className="bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-xs"
+            >
+              {available.map((code) => (
+                <option key={code} value={code}>{languageNames[code]}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="flex flex-col items-center mb-8">
           <div className="bg-blue-600 p-3 rounded-full mb-4">
             <Shield size={32} className="text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white">IBVAP</h1>
-          <p className="text-slate-400 text-sm mt-1">Intelligent Border Video Analytics</p>
+          <p className="text-slate-400 text-sm mt-1 text-center">{t("appName")}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {!mustChange && (
             <div>
-              <label className="block text-sm text-slate-300 mb-1">Username</label>
+              <label className="block text-sm text-slate-300 mb-1">{t("username")}</label>
               <input
                 type="text"
                 value={username}
@@ -63,7 +80,7 @@ export default function Login() {
           )}
           <div>
             <label className="block text-sm text-slate-300 mb-1">
-              {mustChange ? "Current password" : "Password"}
+              {mustChange ? t("currentPassword") : t("password")}
             </label>
             <input
               type="password"
@@ -75,7 +92,7 @@ export default function Login() {
           </div>
           {mustChange && (
             <div>
-              <label className="block text-sm text-slate-300 mb-1">New password (min 8 chars)</label>
+              <label className="block text-sm text-slate-300 mb-1">{t("newPassword")}</label>
               <input
                 type="password"
                 value={newPassword}
@@ -84,24 +101,17 @@ export default function Login() {
                 minLength={8}
                 required
               />
-              <p className="text-amber-400 text-xs mt-2">First login: set a new admin password.</p>
             </div>
           )}
-
           {error && <p className="text-red-400 text-sm">{error}</p>}
-
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50"
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50"
           >
-            {loading ? "Please wait..." : mustChange ? "Update password" : "Sign In"}
+            {loading ? "…" : mustChange ? t("changePassword") : t("submit")}
           </button>
         </form>
-
-        <p className="text-center text-slate-500 text-xs mt-6">
-          Ministry of Home Affairs • Sashastra Seema Bal
-        </p>
       </div>
     </div>
   );

@@ -63,6 +63,12 @@ class KalmanBoxTracker:
         self.time_since_update = 0
         self.hits = 1
         self.age = 1
+        # Behavior history for crawling / loitering detection
+        self.centroid_history: List[List[float]] = []
+        self.aspect_history: List[float] = []  # height / width
+        self.flat_frames = 0  # consecutive frames where height < width (crawling/crouching)
+        self._last_centroid = None
+        self.speed_px = 0.0  # pixels per frame
 
     def predict(self):
         self.x = self.F @ self.x
@@ -83,8 +89,54 @@ class KalmanBoxTracker:
         self.label = label or self.label
         self.confidence = float(confidence or self.confidence)
 
+        # Update behavior metrics
+        x1, y1, x2, y2 = bbox
+        w = max(1.0, x2 - x1)
+        h = max(1.0, y2 - y1)
+        aspect = h / w  # height/width; < 1.0 means flat (crawling/crouching)
+        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+
+        if self._last_centroid is not None:
+            dx = cx - self._last_centroid[0]
+            dy = cy - self._last_centroid[1]
+            self.speed_px = float(np.sqrt(dx * dx + dy * dy))
+        self._last_centroid = [cx, cy]
+
+        self.centroid_history.append([cx, cy])
+        if len(self.centroid_history) > 30:
+            self.centroid_history.pop(0)
+
+        self.aspect_history.append(aspect)
+        if len(self.aspect_history) > 15:
+            self.aspect_history.pop(0)
+
+        if aspect < 0.85:  # height significantly less than width
+            self.flat_frames += 1
+        else:
+            self.flat_frames = 0
+
     def bbox(self) -> List[float]:
         return _z_to_bbox(self.x[:, 0])
+
+    def is_crawling_or_crouching(self, min_frames: int = 6) -> bool:
+        """True if person has been in flat aspect ratio for several consecutive frames."""
+        return self.label == "person" and self.flat_frames >= min_frames
+
+    def is_slow_loitering(self, max_speed: float = 2.5, min_age: int = 15) -> bool:
+        """Very slow movement over many frames → suspicious loitering near fence etc."""
+        if self.label != "person" or self.age < min_age:
+            return False
+        # Average speed over recent history
+        if len(self.centroid_history) < 8:
+            return False
+        recent = self.centroid_history[-8:]
+        total_dist = 0.0
+        for i in range(1, len(recent)):
+            dx = recent[i][0] - recent[i - 1][0]
+            dy = recent[i][1] - recent[i - 1][1]
+            total_dist += np.sqrt(dx * dx + dy * dy)
+        avg_speed = total_dist / (len(recent) - 1)
+        return avg_speed < max_speed
 
 
 def _associate(tracks, detections, iou_threshold: float):
@@ -150,11 +202,17 @@ class MultiObjectTracker:
             if tr.time_since_update > 0 and tr.hits < 2:
                 continue
             bb = tr.bbox()
+            w = max(1.0, bb[2] - bb[0])
+            h = max(1.0, bb[3] - bb[1])
             results.append({
                 "track_id": tr.id,
                 "label": tr.label,
                 "confidence": tr.confidence,
                 "bbox": bb,
                 "centroid": [(bb[0] + bb[2]) / 2.0, (bb[1] + bb[3]) / 2.0],
+                "speed": round(tr.speed_px, 2),
+                "aspect_ratio": round(h / w, 3),
+                "is_crawling": tr.is_crawling_or_crouching(),
+                "is_slow_loitering": tr.is_slow_loitering(),
             })
         return results
