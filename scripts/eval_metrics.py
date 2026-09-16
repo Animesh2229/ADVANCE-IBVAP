@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline accuracy / complexity report scaffold for IBVAP."""
+"""Offline accuracy / complexity report scaffold for IBVAP (+ jury condition table)."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,7 @@ import numpy as np
 
 def bench_face(gallery_size: int, dim: int = 512, queries: int = 50):
     from services.face_match import best_match
+
     gallery = [(i, f"p{i}", np.random.randn(dim).astype(float).tolist()) for i in range(gallery_size)]
     t0 = time.perf_counter()
     hits = 0
@@ -33,12 +34,14 @@ def bench_face(gallery_size: int, dim: int = 512, queries: int = 50):
         "hit_rate_synthetic": hits / queries,
         "total_seconds": round(dt, 4),
         "ms_per_query": round(1000 * dt / queries, 3),
-        "complexity": "O(G*D) vectorized matrix-vector",
+        "complexity": "O(G*D) vectorized; enable FAISS when G is large",
+        "faiss_hint": "Optional FAISS recommended when gallery_size >= 5000",
     }
 
 
 def bench_tracker(frames: int = 30, dets_per_frame: int = 15):
     from ai_pipeline.tracker import MultiObjectTracker
+
     tr = MultiObjectTracker(max_disappeared=10, iou_threshold=0.3)
     t0 = time.perf_counter()
     for f in range(frames):
@@ -59,16 +62,51 @@ def bench_tracker(frames: int = 30, dets_per_frame: int = 15):
     }
 
 
+def condition_table():
+    return {
+        "disclaimer": (
+            "Illustrative relative degradation for briefing only. "
+            "Replace with labeled day/night/fog evaluation before operational claims."
+        ),
+        "units": "relative_score_0_to_1 (synthetic prior, not certified)",
+        "rows": [
+            {"condition": "day_clear", "detection_mAP50": 0.91, "face_TPR": 0.89, "anpr_char_acc": 0.94},
+            {"condition": "dusk", "detection_mAP50": 0.82, "face_TPR": 0.78, "anpr_char_acc": 0.86},
+            {"condition": "night_ir_or_low_light", "detection_mAP50": 0.68, "face_TPR": 0.61, "anpr_char_acc": 0.72},
+            {"condition": "fog_dust_rain", "detection_mAP50": 0.55, "face_TPR": 0.48, "anpr_char_acc": 0.60},
+        ],
+        "mitigations": [
+            "Night enhancement module on edge",
+            "Per-BOP confidence thresholds in edge_config.yaml",
+            "Human-in-loop on HIGH alerts",
+            "Pilot labeled dataset collection before scale-out",
+        ],
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gallery-size", type=int, default=500)
     ap.add_argument("--detections", type=int, default=15)
     ap.add_argument("--tracks-frames", type=int, default=40)
+    ap.add_argument(
+        "--conditions",
+        default="day_clear,night_ir_or_low_light,fog_dust_rain",
+        help="Comma list; filter illustrative table rows",
+    )
     args = ap.parse_args()
+
+    table = condition_table()
+    wanted = {c.strip() for c in args.conditions.split(",") if c.strip()}
+    if wanted:
+        table = dict(table)
+        table["rows"] = [r for r in table["rows"] if r["condition"] in wanted] or table["rows"]
+
     report = {
-        "note": "Synthetic micro-benchmark only. Replace with labeled datasets for real mAP/TPR/ANPR accuracy.",
+        "note": "Synthetic micro-benchmark + illustrative condition priors. Not field certification.",
         "face_match": bench_face(args.gallery_size),
         "tracker": bench_tracker(args.tracks_frames, args.detections),
+        "condition_priors": table,
         "field_metrics_template": {
             "detection_mAP50": None,
             "face_true_positive_rate": None,
